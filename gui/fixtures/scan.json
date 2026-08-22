@@ -1,0 +1,41 @@
+{
+  "target": "127.0.0.1",
+  "proto": "tcp",
+  "hosts": 1,
+  "ports": 4,
+  "seconds": 0.51,
+  "results": [
+    {
+      "host": "127.0.0.1",
+      "port": 22,
+      "proto": "tcp",
+      "state": "closed",
+      "service": "ssh",
+      "detail": ""
+    },
+    {
+      "host": "127.0.0.1",
+      "port": 80,
+      "proto": "tcp",
+      "state": "closed",
+      "service": "http",
+      "detail": ""
+    },
+    {
+      "host": "127.0.0.1",
+      "port": 443,
+      "proto": "tcp",
+      "state": "closed",
+      "service": "https",
+      "detail": ""
+    },
+    {
+      "host": "127.0.0.1",
+      "port": 8099,
+      "proto": "tcp",
+      "state": "open",
+      "service": "",
+      "detail": "HTTP/1.0 200 OK | SimpleHTTP/0.6 Python/3.11.15"
+    }
+  ]
+}

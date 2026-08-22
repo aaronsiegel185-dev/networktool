@@ -16,6 +16,12 @@ questions you actually have when a network is misbehaving:
 
 Everything is Python 3.8+ standard library. No pip dependencies, no libpcap, no scapy.
 
+There is also a **desktop GUI** in [`gui/`](gui/README.md) (Rust + egui) that drives this
+same CLI and renders the results - signal bars, channel congestion charts, live packet
+view and switch-neighbour cards.
+
+![nettool GUI](gui/docs/wifi-analyze.png)
+
 ## Install
 
 ```bash
@@ -224,10 +230,21 @@ Then `sudo nettool wifi analyze` for the channel picture.
 **"I need evidence for someone else"** — `sudo nettool capture -d 60 -w evidence.pcap -f "host X"`
 and hand over the pcap.
 
+## GUI
+
+```bash
+cd gui && cargo run --release
+```
+
+A tabbed desktop app over the same commands: health check, host discovery, port scanning,
+LLDP/CDP neighbour cards, live capture with pcap export, and the Wi-Fi analysis with
+per-channel congestion charts and a live signal monitor. See [gui/README.md](gui/README.md).
+
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -v     # CLI: 59 tests
+cd gui && cargo test                         # GUI: 31 tests
 ```
 
 The suite covers the packet decoder, pcap reader/writer round-trips, the filter language,

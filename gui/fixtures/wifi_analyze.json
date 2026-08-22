@@ -1,0 +1,312 @@
+{
+  "source": "iw",
+  "report": {
+    "total_bss": 4,
+    "bands": {
+      "2.4": {
+        "bss_count": 2,
+        "channels": {
+          "1": {
+            "bss": 1,
+            "cochannel": 1,
+            "overlapping": 0,
+            "strongest_dbm": -72.0,
+            "strongest_ssid": "NeighborWifi",
+            "utilization_pct": null
+          },
+          "6": {
+            "bss": 1,
+            "cochannel": 1,
+            "overlapping": 0,
+            "strongest_dbm": -47.0,
+            "strongest_ssid": "HomeNet",
+            "utilization_pct": 50.2
+          }
+        },
+        "congestion_score": {
+          "1": 0.51,
+          "6": 1.5,
+          "11": 0.0
+        },
+        "best_channel": 11,
+        "best_score": 0.0
+      },
+      "5": {
+        "bss_count": 2,
+        "channels": {
+          "36": {
+            "bss": 1,
+            "cochannel": 1,
+            "overlapping": 0,
+            "strongest_dbm": -58.0,
+            "strongest_ssid": "HomeNet-5G",
+            "utilization_pct": null
+          },
+          "149": {
+            "bss": 1,
+            "cochannel": 1,
+            "overlapping": 0,
+            "strongest_dbm": -80.0,
+            "strongest_ssid": "(hidden)",
+            "utilization_pct": null
+          }
+        },
+        "congestion_score": {
+          "36": 0.82,
+          "149": 0.33
+        },
+        "best_channel": 149,
+        "best_score": 0.33
+      }
+    },
+    "current": {
+      "connected": true,
+      "ssid": "HomeNet",
+      "bssid": "3c:37:86:11:22:33",
+      "freq": 2437,
+      "signal_dbm": -47.0,
+      "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
+      "rx_bitrate": "130.0 MBit/s MCS 15",
+      "channel": 6,
+      "band": "2.4",
+      "rating": "excellent",
+      "quality_pct": 72,
+      "interface": "wlan0",
+      "station": {
+        "mac": "3c:37:86:11:22:33",
+        "inactive_time": 20,
+        "rx_bytes": 91827364,
+        "rx_packets": 123456,
+        "tx_bytes": 1827364,
+        "tx_packets": 10000,
+        "tx_retries": 2500,
+        "tx_failed": 250,
+        "beacon_loss": 3,
+        "signal_dbm": -47,
+        "signal_avg_dbm": -48,
+        "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
+        "connected_time": 3600,
+        "retry_pct": 25.0,
+        "fail_pct": 2.5
+      },
+      "proc": {
+        "link_quality": 62.0,
+        "signal_dbm": -47.0,
+        "noise_dbm": -89.0,
+        "tx_retries": 2500,
+        "missed_beacons": 4,
+        "rx_invalid_crypt": 0
+      },
+      "noise_dbm": -89.0,
+      "snr_db": 42.0
+    },
+    "findings": [
+      [
+        "warn",
+        "TX retry rate 25.0% - a hallmark of interference or a weak link."
+      ],
+      [
+        "warn",
+        "TX failure rate 2.5% - frames are being dropped after retries."
+      ],
+      [
+        "info",
+        "4 missed beacons counted since association."
+      ],
+      [
+        "critical",
+        "Channel 6 airtime 75% busy (10% our RX, 5% our TX, 60% other/interference)."
+      ],
+      [
+        "warn",
+        "60% of airtime is busy with traffic we cannot decode - non-Wi-Fi interference or distant co-channel APs."
+      ],
+      [
+        "info",
+        "Channel 11 looks clearer than your current channel 6 (load 0.0 vs 1.5)."
+      ],
+      [
+        "info",
+        "You are on 2.4 GHz; 5 GHz was seen nearby and is usually the better band indoors."
+      ],
+      [
+        "info",
+        "1 hidden SSID(s) in range."
+      ]
+    ],
+    "recommendations": {
+      "2.4": {
+        "channel": 11,
+        "score": 0.0,
+        "note": "lowest weighted co/adjacent-channel load; 1/6/11 only (2.4 GHz channels overlap)"
+      },
+      "5": {
+        "channel": 149,
+        "score": 0.33,
+        "note": "lowest weighted co/adjacent-channel load; non-DFS preferred"
+      }
+    }
+  },
+  "networks": [
+    {
+      "bssid": "3c:37:86:11:22:33",
+      "ssid": "HomeNet",
+      "signal_dbm": -47.0,
+      "freq": 2437,
+      "channel": 6,
+      "band": "2.4",
+      "security": [
+        "WPA2/WPA3"
+      ],
+      "width_mhz": 40,
+      "stations": 7,
+      "utilization_pct": 50.2,
+      "associated": true,
+      "capabilities": "ESS Privacy ShortSlotTime (0x0431)",
+      "beacon_interval": 100,
+      "last_seen_ms": 120,
+      "country": "US",
+      "standards": [
+        "n"
+      ],
+      "quality_pct": 72,
+      "rating": "excellent"
+    },
+    {
+      "bssid": "60:22:32:aa:bb:cc",
+      "ssid": "NeighborWifi",
+      "signal_dbm": -72.0,
+      "freq": 2412,
+      "channel": 1,
+      "band": "2.4",
+      "security": [
+        "WPA2/WPA3",
+        "WPA3-SAE"
+      ],
+      "width_mhz": 20,
+      "stations": null,
+      "utilization_pct": null,
+      "associated": false,
+      "capabilities": "",
+      "beacon_interval": null,
+      "last_seen_ms": null,
+      "country": "",
+      "standards": [],
+      "quality_pct": 30,
+      "rating": "marginal"
+    },
+    {
+      "bssid": "04:18:d6:de:ad:01",
+      "ssid": "HomeNet-5G",
+      "signal_dbm": -58.0,
+      "freq": 5180,
+      "channel": 36,
+      "band": "5",
+      "security": [
+        "WPA2/WPA3"
+      ],
+      "width_mhz": 80,
+      "stations": null,
+      "utilization_pct": null,
+      "associated": false,
+      "capabilities": "",
+      "beacon_interval": null,
+      "last_seen_ms": null,
+      "country": "",
+      "standards": [
+        "ac",
+        "ax"
+      ],
+      "quality_pct": 53,
+      "rating": "good"
+    },
+    {
+      "bssid": "04:18:d6:de:ad:02",
+      "ssid": "",
+      "signal_dbm": -80.0,
+      "freq": 5745,
+      "channel": 149,
+      "band": "5",
+      "security": [
+        "open"
+      ],
+      "width_mhz": 20,
+      "stations": null,
+      "utilization_pct": null,
+      "associated": false,
+      "capabilities": "",
+      "beacon_interval": null,
+      "last_seen_ms": null,
+      "country": "",
+      "standards": [],
+      "quality_pct": 17,
+      "rating": "poor"
+    }
+  ],
+  "current": {
+    "connected": true,
+    "ssid": "HomeNet",
+    "bssid": "3c:37:86:11:22:33",
+    "freq": 2437,
+    "signal_dbm": -47.0,
+    "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
+    "rx_bitrate": "130.0 MBit/s MCS 15",
+    "channel": 6,
+    "band": "2.4",
+    "rating": "excellent",
+    "quality_pct": 72,
+    "interface": "wlan0",
+    "station": {
+      "mac": "3c:37:86:11:22:33",
+      "inactive_time": 20,
+      "rx_bytes": 91827364,
+      "rx_packets": 123456,
+      "tx_bytes": 1827364,
+      "tx_packets": 10000,
+      "tx_retries": 2500,
+      "tx_failed": 250,
+      "beacon_loss": 3,
+      "signal_dbm": -47,
+      "signal_avg_dbm": -48,
+      "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
+      "connected_time": 3600,
+      "retry_pct": 25.0,
+      "fail_pct": 2.5
+    },
+    "proc": {
+      "link_quality": 62.0,
+      "signal_dbm": -47.0,
+      "noise_dbm": -89.0,
+      "tx_retries": 2500,
+      "missed_beacons": 4,
+      "rx_invalid_crypt": 0
+    },
+    "noise_dbm": -89.0,
+    "snr_db": 42.0
+  },
+  "survey": [
+    {
+      "iface": "wlan0",
+      "in_use": false,
+      "freq": 2412,
+      "channel": 1,
+      "band": "2.4"
+    },
+    {
+      "iface": "wlan0",
+      "in_use": true,
+      "freq": 2437,
+      "channel": 6,
+      "band": "2.4",
+      "noise_dbm": -89,
+      "active_time": 10000,
+      "busy_time": 7500,
+      "receive_time": 1000,
+      "transmit_time": 500,
+      "busy_pct": 75.0,
+      "tx_pct": 5.0,
+      "rx_pct": 10.0,
+      "interference_pct": 60.0
+    }
+  ]
+}

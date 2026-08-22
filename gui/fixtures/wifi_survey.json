@@ -1,0 +1,27 @@
+{
+  "survey": [
+    {
+      "iface": "wlan0",
+      "in_use": false,
+      "freq": 2412,
+      "channel": 1,
+      "band": "2.4"
+    },
+    {
+      "iface": "wlan0",
+      "in_use": true,
+      "freq": 2437,
+      "channel": 6,
+      "band": "2.4",
+      "noise_dbm": -89,
+      "active_time": 10000,
+      "busy_time": 7500,
+      "receive_time": 1000,
+      "transmit_time": 500,
+      "busy_pct": 75.0,
+      "tx_pct": 5.0,
+      "rx_pct": 10.0,
+      "interference_pct": 60.0
+    }
+  ]
+}

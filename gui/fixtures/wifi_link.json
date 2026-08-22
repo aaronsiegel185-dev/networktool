@@ -1,0 +1,41 @@
+{
+  "connected": true,
+  "ssid": "HomeNet",
+  "bssid": "3c:37:86:11:22:33",
+  "freq": 2437,
+  "signal_dbm": -47.0,
+  "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
+  "rx_bitrate": "130.0 MBit/s MCS 15",
+  "channel": 6,
+  "band": "2.4",
+  "rating": "excellent",
+  "quality_pct": 72,
+  "interface": "wlan0",
+  "station": {
+    "mac": "3c:37:86:11:22:33",
+    "inactive_time": 20,
+    "rx_bytes": 91827364,
+    "rx_packets": 123456,
+    "tx_bytes": 1827364,
+    "tx_packets": 10000,
+    "tx_retries": 2500,
+    "tx_failed": 250,
+    "beacon_loss": 3,
+    "signal_dbm": -47,
+    "signal_avg_dbm": -48,
+    "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
+    "connected_time": 3600,
+    "retry_pct": 25.0,
+    "fail_pct": 2.5
+  },
+  "proc": {
+    "link_quality": 62.0,
+    "signal_dbm": -47.0,
+    "noise_dbm": -89.0,
+    "tx_retries": 2500,
+    "missed_beacons": 4,
+    "rx_invalid_crypt": 0
+  },
+  "noise_dbm": -89.0,
+  "snr_db": 42.0
+}

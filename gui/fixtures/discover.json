@@ -1,0 +1,14 @@
+{
+  "method": "arp",
+  "hosts": [
+    {
+      "ip": "192.0.2.1",
+      "mac": "02:fc:00:00:00:05",
+      "vendor": "(locally administered / randomized)",
+      "method": "arp",
+      "iface": "eth0",
+      "name": ""
+    }
+  ],
+  "duplicate_ips": {}
+}

@@ -1,0 +1,137 @@
+{
+  "interfaces": [
+    {
+      "name": "eth0",
+      "index": 4,
+      "mac": "02:fc:00:00:00:01",
+      "ipv4": "192.0.2.2",
+      "netmask": "255.255.255.0",
+      "prefixlen": 24,
+      "broadcast": "192.0.2.255",
+      "ipv6": [],
+      "mtu": 1400,
+      "operstate": "up",
+      "carrier": "1",
+      "speed_mbps": -1,
+      "duplex": "unknown",
+      "wireless": false,
+      "up": true,
+      "running": true,
+      "loopback": false,
+      "promisc": false,
+      "counters": {
+        "rx_bytes": 52240085,
+        "tx_bytes": 56818170,
+        "rx_packets": 36162,
+        "tx_packets": 35230,
+        "rx_errors": 0,
+        "tx_errors": 0,
+        "rx_dropped": 20,
+        "tx_dropped": 0,
+        "collisions": 0
+      }
+    },
+    {
+      "name": "lo",
+      "index": 1,
+      "mac": "00:00:00:00:00:00",
+      "ipv4": "127.0.0.1",
+      "netmask": "255.0.0.0",
+      "prefixlen": 8,
+      "broadcast": "0.0.0.0",
+      "ipv6": [],
+      "mtu": 65536,
+      "operstate": "unknown",
+      "carrier": "1",
+      "speed_mbps": null,
+      "duplex": "",
+      "wireless": false,
+      "up": true,
+      "running": true,
+      "loopback": true,
+      "promisc": false,
+      "counters": {
+        "rx_bytes": 25385004,
+        "tx_bytes": 25385004,
+        "rx_packets": 1472,
+        "tx_packets": 1472,
+        "rx_errors": 0,
+        "tx_errors": 0,
+        "rx_dropped": 0,
+        "tx_dropped": 0,
+        "collisions": 0
+      }
+    }
+  ],
+  "routes": [
+    {
+      "iface": "eth0",
+      "dest": "0.0.0.0",
+      "gateway": "192.0.2.1",
+      "prefixlen": 0,
+      "flags": 3,
+      "metric": 0
+    },
+    {
+      "iface": "eth0",
+      "dest": "192.0.2.0",
+      "gateway": "0.0.0.0",
+      "prefixlen": 24,
+      "flags": 1,
+      "metric": 0
+    }
+  ],
+  "default_gateway": "192.0.2.1",
+  "gateway_interface": "eth0",
+  "dns_servers": [
+    "8.8.8.8"
+  ],
+  "dns_search": [],
+  "arp": [
+    {
+      "ip": "192.0.2.5",
+      "type": "0x1",
+      "flags": "0x0",
+      "mac": "00:00:00:00:00:00",
+      "mask": "*",
+      "iface": "eth0",
+      "incomplete": true
+    },
+    {
+      "ip": "192.0.2.4",
+      "type": "0x1",
+      "flags": "0x0",
+      "mac": "00:00:00:00:00:00",
+      "mask": "*",
+      "iface": "eth0",
+      "incomplete": true
+    },
+    {
+      "ip": "192.0.2.3",
+      "type": "0x1",
+      "flags": "0x0",
+      "mac": "00:00:00:00:00:00",
+      "mask": "*",
+      "iface": "eth0",
+      "incomplete": true
+    },
+    {
+      "ip": "192.0.2.1",
+      "type": "0x1",
+      "flags": "0x2",
+      "mac": "02:fc:00:00:00:05",
+      "mask": "*",
+      "iface": "eth0",
+      "incomplete": false
+    },
+    {
+      "ip": "192.0.2.6",
+      "type": "0x1",
+      "flags": "0x0",
+      "mac": "00:00:00:00:00:00",
+      "mask": "*",
+      "iface": "eth0",
+      "incomplete": true
+    }
+  ]
+}

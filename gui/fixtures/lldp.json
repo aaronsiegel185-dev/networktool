@@ -1,0 +1,103 @@
+{
+  "neighbors": [
+    {
+      "protocol": "LLDP",
+      "src_mac": "aa:bb:cc:dd:ee:ff",
+      "dst_mac": "01:80:c2:00:00:0e",
+      "capabilities": [
+        "Bridge",
+        "Router"
+      ],
+      "enabled_capabilities": [
+        "Bridge"
+      ],
+      "mgmt_addrs": [
+        {
+          "address": "10.20.0.5",
+          "interface": 42,
+          "interface_numbering": "ifIndex"
+        }
+      ],
+      "vlans": [
+        {
+          "vlan": 30,
+          "name": "LABS"
+        }
+      ],
+      "raw_tlvs": [],
+      "vendor": "(locally administered / randomized)",
+      "chassis_id": "aa:bb:cc:dd:ee:ff",
+      "chassis_id_type": "mac",
+      "port_id": "GigabitEthernet1/0/24",
+      "port_id_type": "interface-name",
+      "ttl": 120,
+      "port_description": "uplink to lab bench",
+      "system_name": "sw-idf3-01",
+      "system_description": "Cisco IOS Software, C9300",
+      "port_vlan_id": 30,
+      "autoneg_supported": true,
+      "autoneg_enabled": true,
+      "mau_type": "1000BASE-T full",
+      "poe": {
+        "port_class": "PSE",
+        "supported": true,
+        "enabled": true,
+        "pair_control": false,
+        "power_pairs": 1,
+        "power_class": 4,
+        "requested_mw": 15400,
+        "allocated_mw": 15400
+      },
+      "max_frame_size": 9216,
+      "med_policies": [
+        {
+          "application": "voice",
+          "tagged": true,
+          "vlan": 176,
+          "priority": 2,
+          "dscp": 46
+        }
+      ],
+      "seen_at": 1787437385.943853
+    },
+    {
+      "protocol": "CDP",
+      "src_mac": "11:22:33:44:55:66",
+      "dst_mac": "01:00:0c:cc:cc:cc",
+      "cdp_version": 2,
+      "ttl": 180,
+      "capabilities": [
+        "Router",
+        "Switch",
+        "IGMP"
+      ],
+      "mgmt_addrs": [
+        {
+          "address": "10.20.0.6"
+        }
+      ],
+      "vlans": [],
+      "raw_tlvs": [],
+      "vendor": "",
+      "chassis_id": "sw-core-1.example.net",
+      "system_name": "sw-core-1.example.net",
+      "chassis_id_type": "device-id",
+      "port_id": "FastEthernet0/12",
+      "port_id_type": "interface-name",
+      "enabled_capabilities": [
+        "Router",
+        "Switch",
+        "IGMP"
+      ],
+      "system_description": "Cisco IOS 15.2",
+      "platform": "cisco WS-C2960X",
+      "vtp_domain": "LAB-VTP",
+      "port_vlan_id": 77,
+      "duplex": "full",
+      "poe": {
+        "consumption_mw": 6300
+      },
+      "seen_at": 1787437385.943939
+    }
+  ]
+}

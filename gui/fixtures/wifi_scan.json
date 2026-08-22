@@ -1,0 +1,99 @@
+{
+  "source": "iw",
+  "networks": [
+    {
+      "bssid": "3c:37:86:11:22:33",
+      "ssid": "HomeNet",
+      "signal_dbm": -47.0,
+      "freq": 2437,
+      "channel": 6,
+      "band": "2.4",
+      "security": [
+        "WPA2/WPA3"
+      ],
+      "width_mhz": 40,
+      "stations": 7,
+      "utilization_pct": 50.2,
+      "associated": true,
+      "capabilities": "ESS Privacy ShortSlotTime (0x0431)",
+      "beacon_interval": 100,
+      "last_seen_ms": 120,
+      "country": "US",
+      "standards": [
+        "n"
+      ],
+      "quality_pct": 72,
+      "rating": "excellent"
+    },
+    {
+      "bssid": "60:22:32:aa:bb:cc",
+      "ssid": "NeighborWifi",
+      "signal_dbm": -72.0,
+      "freq": 2412,
+      "channel": 1,
+      "band": "2.4",
+      "security": [
+        "WPA2/WPA3",
+        "WPA3-SAE"
+      ],
+      "width_mhz": 20,
+      "stations": null,
+      "utilization_pct": null,
+      "associated": false,
+      "capabilities": "",
+      "beacon_interval": null,
+      "last_seen_ms": null,
+      "country": "",
+      "standards": [],
+      "quality_pct": 30,
+      "rating": "marginal"
+    },
+    {
+      "bssid": "04:18:d6:de:ad:01",
+      "ssid": "HomeNet-5G",
+      "signal_dbm": -58.0,
+      "freq": 5180,
+      "channel": 36,
+      "band": "5",
+      "security": [
+        "WPA2/WPA3"
+      ],
+      "width_mhz": 80,
+      "stations": null,
+      "utilization_pct": null,
+      "associated": false,
+      "capabilities": "",
+      "beacon_interval": null,
+      "last_seen_ms": null,
+      "country": "",
+      "standards": [
+        "ac",
+        "ax"
+      ],
+      "quality_pct": 53,
+      "rating": "good"
+    },
+    {
+      "bssid": "04:18:d6:de:ad:02",
+      "ssid": "",
+      "signal_dbm": -80.0,
+      "freq": 5745,
+      "channel": 149,
+      "band": "5",
+      "security": [
+        "open"
+      ],
+      "width_mhz": 20,
+      "stations": null,
+      "utilization_pct": null,
+      "associated": false,
+      "capabilities": "",
+      "beacon_interval": null,
+      "last_seen_ms": null,
+      "country": "",
+      "standards": [],
+      "quality_pct": 17,
+      "rating": "poor"
+    }
+  ]
+}

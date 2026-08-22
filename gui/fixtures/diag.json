@@ -1,0 +1,319 @@
+{
+  "verdict": "Network looks healthy (notes below).",
+  "worst": "info",
+  "checks": [
+    {
+      "check": "link",
+      "severity": "ok",
+      "message": "eth0 is up (link up, MTU 1400)."
+    },
+    {
+      "check": "address",
+      "severity": "ok",
+      "message": "192.0.2.2/24 on eth0."
+    },
+    {
+      "check": "gateway",
+      "severity": "ok",
+      "message": "Gateway 192.0.2.1: 0.4 ms avg, 0% loss."
+    },
+    {
+      "check": "dns",
+      "severity": "ok",
+      "message": "DNS servers: 8.8.8.8"
+    },
+    {
+      "check": "dns",
+      "severity": "info",
+      "message": "DNS 8.8.8.8 does not answer TCP/53 (normal for many resolvers)."
+    },
+    {
+      "check": "dns",
+      "severity": "ok",
+      "message": "DNS resolves (example.com -> 104.20.23.154 in 23 ms)."
+    },
+    {
+      "check": "internet",
+      "severity": "ok",
+      "message": "Internet reachable (1.1.1.1:443 in 1 ms)."
+    },
+    {
+      "check": "mtu",
+      "severity": "ok",
+      "message": "Path MTU to 192.0.2.1 is 1400, matching the interface."
+    }
+  ],
+  "data": {
+    "interfaces": [
+      {
+        "name": "eth0",
+        "index": 4,
+        "mac": "02:fc:00:00:00:01",
+        "ipv4": "192.0.2.2",
+        "netmask": "255.255.255.0",
+        "prefixlen": 24,
+        "broadcast": "192.0.2.255",
+        "ipv6": [],
+        "mtu": 1400,
+        "operstate": "up",
+        "carrier": "1",
+        "speed_mbps": -1,
+        "duplex": "unknown",
+        "wireless": false,
+        "up": true,
+        "running": true,
+        "loopback": false,
+        "promisc": false,
+        "counters": {
+          "rx_bytes": 52240085,
+          "tx_bytes": 56818170,
+          "rx_packets": 36162,
+          "tx_packets": 35230,
+          "rx_errors": 0,
+          "tx_errors": 0,
+          "rx_dropped": 20,
+          "tx_dropped": 0,
+          "collisions": 0
+        }
+      },
+      {
+        "name": "ifb0",
+        "index": 2,
+        "mac": "ae:74:c1:be:34:0b",
+        "ipv4": "",
+        "netmask": "",
+        "prefixlen": 0,
+        "broadcast": "",
+        "ipv6": [],
+        "mtu": 1500,
+        "operstate": "down",
+        "carrier": "",
+        "speed_mbps": null,
+        "duplex": "",
+        "wireless": false,
+        "up": false,
+        "running": false,
+        "loopback": false,
+        "promisc": false,
+        "counters": {
+          "rx_bytes": 0,
+          "tx_bytes": 0,
+          "rx_packets": 0,
+          "tx_packets": 0,
+          "rx_errors": 0,
+          "tx_errors": 0,
+          "rx_dropped": 0,
+          "tx_dropped": 0,
+          "collisions": 0
+        }
+      },
+      {
+        "name": "ifb1",
+        "index": 3,
+        "mac": "82:88:e6:11:a8:d0",
+        "ipv4": "",
+        "netmask": "",
+        "prefixlen": 0,
+        "broadcast": "",
+        "ipv6": [],
+        "mtu": 1500,
+        "operstate": "down",
+        "carrier": "",
+        "speed_mbps": null,
+        "duplex": "",
+        "wireless": false,
+        "up": false,
+        "running": false,
+        "loopback": false,
+        "promisc": false,
+        "counters": {
+          "rx_bytes": 0,
+          "tx_bytes": 0,
+          "rx_packets": 0,
+          "tx_packets": 0,
+          "rx_errors": 0,
+          "tx_errors": 0,
+          "rx_dropped": 0,
+          "tx_dropped": 0,
+          "collisions": 0
+        }
+      },
+      {
+        "name": "lo",
+        "index": 1,
+        "mac": "00:00:00:00:00:00",
+        "ipv4": "127.0.0.1",
+        "netmask": "255.0.0.0",
+        "prefixlen": 8,
+        "broadcast": "0.0.0.0",
+        "ipv6": [],
+        "mtu": 65536,
+        "operstate": "unknown",
+        "carrier": "1",
+        "speed_mbps": null,
+        "duplex": "",
+        "wireless": false,
+        "up": true,
+        "running": true,
+        "loopback": true,
+        "promisc": false,
+        "counters": {
+          "rx_bytes": 25385004,
+          "tx_bytes": 25385004,
+          "rx_packets": 1472,
+          "tx_packets": 1472,
+          "rx_errors": 0,
+          "tx_errors": 0,
+          "rx_dropped": 0,
+          "tx_dropped": 0,
+          "collisions": 0
+        }
+      }
+    ],
+    "interface": {
+      "name": "eth0",
+      "index": 4,
+      "mac": "02:fc:00:00:00:01",
+      "ipv4": "192.0.2.2",
+      "netmask": "255.255.255.0",
+      "prefixlen": 24,
+      "broadcast": "192.0.2.255",
+      "ipv6": [],
+      "mtu": 1400,
+      "operstate": "up",
+      "carrier": "1",
+      "speed_mbps": -1,
+      "duplex": "unknown",
+      "wireless": false,
+      "up": true,
+      "running": true,
+      "loopback": false,
+      "promisc": false,
+      "counters": {
+        "rx_bytes": 52240085,
+        "tx_bytes": 56818170,
+        "rx_packets": 36162,
+        "tx_packets": 35230,
+        "rx_errors": 0,
+        "tx_errors": 0,
+        "rx_dropped": 20,
+        "tx_dropped": 0,
+        "collisions": 0
+      }
+    },
+    "arp": [
+      {
+        "ip": "192.0.2.5",
+        "type": "0x1",
+        "flags": "0x0",
+        "mac": "00:00:00:00:00:00",
+        "mask": "*",
+        "iface": "eth0",
+        "incomplete": true
+      },
+      {
+        "ip": "192.0.2.4",
+        "type": "0x1",
+        "flags": "0x0",
+        "mac": "00:00:00:00:00:00",
+        "mask": "*",
+        "iface": "eth0",
+        "incomplete": true
+      },
+      {
+        "ip": "192.0.2.3",
+        "type": "0x1",
+        "flags": "0x0",
+        "mac": "00:00:00:00:00:00",
+        "mask": "*",
+        "iface": "eth0",
+        "incomplete": true
+      },
+      {
+        "ip": "192.0.2.1",
+        "type": "0x1",
+        "flags": "0x2",
+        "mac": "02:fc:00:00:00:05",
+        "mask": "*",
+        "iface": "eth0",
+        "incomplete": false
+      },
+      {
+        "ip": "192.0.2.6",
+        "type": "0x1",
+        "flags": "0x0",
+        "mac": "00:00:00:00:00:00",
+        "mask": "*",
+        "iface": "eth0",
+        "incomplete": true
+      }
+    ],
+    "gateway": "192.0.2.1",
+    "gateway_ping": {
+      "host": "192.0.2.1",
+      "address": "192.0.2.1",
+      "sent": 5,
+      "received": 5,
+      "loss_pct": 0.0,
+      "rtt_min": 0.2930164337158203,
+      "rtt_avg": 0.3540992736816406,
+      "rtt_max": 0.38695335388183594,
+      "jitter": 0.09393692016601562,
+      "errors": [],
+      "rtts": [
+        0.38695335388183594,
+        0.3657341003417969,
+        0.3764629364013672,
+        0.3483295440673828,
+        0.2930164337158203
+      ],
+      "stdev": 0.03701113449208932
+    },
+    "dns_servers": [
+      "8.8.8.8"
+    ],
+    "dns_lookups": {
+      "example.com": {
+        "address": "104.20.23.154",
+        "ms": 22.60613441467285
+      },
+      "cloudflare.com": {
+        "address": "104.16.133.229",
+        "ms": 19.449949264526367
+      }
+    },
+    "internet": [
+      {
+        "host": "1.1.1.1",
+        "port": 443,
+        "ms": 0.5249977111816406
+      },
+      {
+        "host": "9.9.9.9",
+        "port": 443,
+        "ms": 0.6425380706787109
+      }
+    ],
+    "internet_ping": {
+      "host": "1.1.1.1",
+      "address": "1.1.1.1",
+      "sent": 5,
+      "received": 0,
+      "loss_pct": 100.0,
+      "rtt_min": null,
+      "rtt_avg": null,
+      "rtt_max": null,
+      "jitter": null,
+      "errors": [],
+      "rtts": []
+    },
+    "path_mtu": {
+      "host": "192.0.2.1",
+      "address": "192.0.2.1",
+      "mtu": 1400,
+      "note": "largest ICMP packet delivered with DF set"
+    },
+    "verdict": "Network looks healthy (notes below).",
+    "worst_severity": "info"
+  }
+}
