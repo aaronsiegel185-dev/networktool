@@ -1,0 +1,641 @@
+"""nettool command line interface."""
+
+import argparse
+import csv
+import json
+import sys
+import time
+
+from . import __version__
+from . import capture as capmod
+from . import diag as diagmod
+from . import discover as discmod
+from . import iface as ifmod
+from . import lldp as lldpmod
+from . import ping as pingmod
+from . import portscan
+from . import wifi as wifimod
+from .util import (NetToolError, human_bytes, is_root, parse_ports, parse_targets,
+                   section, table)
+
+SEV_MARK = {"ok": "[ ok ]", "info": "[info]", "warn": "[WARN]", "critical": "[FAIL]"}
+
+
+def _emit_json(payload):
+    json.dump(payload, sys.stdout, indent=2, default=str, sort_keys=False)
+    sys.stdout.write("\n")
+
+
+# --- iface -----------------------------------------------------------------
+
+def cmd_iface(args):
+    interfaces = ifmod.inventory()
+    if args.name:
+        interfaces = [i for i in interfaces if i["name"] == args.name]
+        if not interfaces:
+            raise NetToolError("no such interface: %s" % args.name)
+    if not args.all:
+        interfaces = [i for i in interfaces if i["up"]]
+    gateway, gw_dev = ifmod.default_gateway()
+    servers, search = ifmod.dns_servers()
+    if args.json:
+        _emit_json({"interfaces": interfaces, "routes": ifmod.routes(),
+                    "default_gateway": gateway, "gateway_interface": gw_dev,
+                    "dns_servers": servers, "dns_search": search,
+                    "arp": ifmod.arp_table()})
+        return 0
+    rows = []
+    for i in interfaces:
+        addr = "%s/%d" % (i["ipv4"], i["prefixlen"]) if i["ipv4"] else "-"
+        speed = "%s Mb/s" % i["speed_mbps"] if i["speed_mbps"] and i["speed_mbps"] > 0 else "-"
+        kind = "wifi" if i["wireless"] else ("loopback" if i["loopback"] else "wired")
+        rows.append([i["name"], kind, "up" if i["up"] else "down", i["operstate"],
+                     addr, i["mac"], i["mtu"], speed, i["duplex"] or "-",
+                     human_bytes(i["counters"]["rx_bytes"]),
+                     human_bytes(i["counters"]["tx_bytes"]),
+                     i["counters"]["rx_errors"] + i["counters"]["tx_errors"]])
+    table(rows, ["iface", "type", "admin", "oper", "ipv4", "mac", "mtu", "speed",
+                 "duplex", "rx", "tx", "errs"])
+    if args.verbose:
+        for i in interfaces:
+            if i["ipv6"]:
+                sys.stdout.write("%s IPv6: %s\n" % (i["name"], ", ".join(i["ipv6"])))
+    section("routing")
+    table([[r["iface"], "%s/%d" % (r["dest"], r["prefixlen"]), r["gateway"], r["metric"]]
+           for r in ifmod.routes()], ["iface", "destination", "gateway", "metric"])
+    sys.stdout.write("\ndefault gateway: %s%s\n" % (gateway or "(none)",
+                                                    " via %s" % gw_dev if gw_dev else ""))
+    sys.stdout.write("dns servers:     %s\n" % (", ".join(servers) or "(none)"))
+    if search:
+        sys.stdout.write("dns search:      %s\n" % " ".join(search))
+    if args.verbose:
+        section("arp cache")
+        table([[e["ip"], e["mac"], e["iface"], "incomplete" if e["incomplete"] else ""]
+               for e in ifmod.arp_table()], ["ip", "mac", "iface", "state"])
+    return 0
+
+
+# --- discover --------------------------------------------------------------
+
+def cmd_discover(args):
+    printed = set()
+
+    def on_host(host):
+        if args.json or host["ip"] in printed:
+            return
+        printed.add(host["ip"])
+        sys.stdout.write("  found %-15s %s\n" % (host["ip"], host.get("mac", "")))
+        sys.stdout.flush()
+
+    if not args.json:
+        sys.stdout.write("discovering hosts...\n")
+    hosts, method = discmod.discover(args.interface, args.cidr, args.method,
+                                     timeout=args.timeout, resolve=not args.no_resolve,
+                                     on_host=on_host if args.progress else None)
+    duplicates = discmod.find_duplicate_ips(hosts)
+    if args.json:
+        _emit_json({"method": method, "hosts": hosts, "duplicate_ips": duplicates})
+        return 0
+    section("hosts on the LAN (%d found via %s)" % (len(hosts), method))
+    table([[h["ip"], h.get("mac", ""), h.get("vendor", ""), h.get("name", ""),
+            h.get("method", ""),
+            "%.1f ms" % h["rtt_ms"] if h.get("rtt_ms") else ""]
+           for h in hosts],
+          ["ip", "mac", "vendor", "hostname", "via", "rtt"])
+    if duplicates:
+        section("duplicate IP addresses (two devices claiming one address)")
+        for ip, macs in duplicates.items():
+            sys.stdout.write("  %s claimed by %s\n" % (ip, ", ".join(macs)))
+    if not is_root() and method != "arp":
+        sys.stdout.write("\nnote: run with sudo for an ARP sweep - it finds hosts that "
+                         "ignore ping and firewall every port.\n")
+    return 0
+
+
+# --- scan ------------------------------------------------------------------
+
+def cmd_scan(args):
+    hosts = parse_targets(args.target)
+    ports = parse_ports(args.ports)
+    proto = "udp" if args.udp else "tcp"
+    if not args.json:
+        sys.stdout.write("scanning %d host(s) x %d %s port(s)...\n"
+                         % (len(hosts), len(ports), proto))
+
+    def progress(done, total):
+        if not args.json and args.progress:
+            pct = 100.0 * done / total
+            sys.stderr.write("\r  %d/%d (%.0f%%)" % (done, total, pct))
+            sys.stderr.flush()
+            if done == total:
+                sys.stderr.write("\n")
+
+    started = time.time()
+    results = portscan.scan(hosts, ports, proto=proto, timeout=args.timeout,
+                            workers=args.workers, banner=args.banner,
+                            open_only=not args.all_states, progress=progress)
+    elapsed = time.time() - started
+    if args.json:
+        _emit_json({"target": args.target, "proto": proto, "hosts": len(hosts),
+                    "ports": len(ports), "seconds": round(elapsed, 2), "results": results})
+        return 0
+    if args.csv:
+        writer = csv.DictWriter(sys.stdout,
+                                fieldnames=["host", "port", "proto", "state", "service",
+                                            "detail"])
+        writer.writeheader()
+        writer.writerows(results)
+        return 0
+    by_host = portscan.summarize(results)
+    for host in sorted(by_host, key=lambda h: tuple(int(p) for p in h.split(".")
+                                                    if p.isdigit()) or (0,)):
+        section("%s" % host)
+        table([[r["port"], r["proto"], r["state"], r["service"], r["detail"]]
+               for r in by_host[host]], ["port", "proto", "state", "service", "detail"])
+    open_count = sum(1 for r in results if r["state"].startswith("open"))
+    sys.stdout.write("\n%d open port(s) across %d host(s) in %.1fs\n"
+                     % (open_count, len(by_host), elapsed))
+    if not by_host:
+        sys.stdout.write("no open ports found (closed and filtered ports are hidden; "
+                         "use --all-states to see them)\n")
+    return 0
+
+
+# --- lldp ------------------------------------------------------------------
+
+def cmd_lldp(args):
+    if args.from_pcap:
+        neighbors = lldpmod.from_pcap(args.from_pcap)
+    else:
+        def on_neighbor(n):
+            if not args.json:
+                sys.stdout.write("\n" + lldpmod.describe(n) + "\n")
+                sys.stdout.flush()
+        if not args.json:
+            sys.stdout.write("listening for LLDP/CDP on %s for up to %ds "
+                             "(switches announce every 30-60s)...\n"
+                             % (args.interface or ifmod.primary_interface(), args.timeout))
+        neighbors = lldpmod.listen(args.interface, timeout=args.timeout,
+                                   stop_after=0 if args.wait_all else 1,
+                                   save_pcap=args.pcap, on_neighbor=on_neighbor)
+    if args.json:
+        _emit_json({"neighbors": neighbors})
+        return 0
+    if not neighbors:
+        sys.stdout.write("\nNo LLDP or CDP frames seen.\n"
+                         "  - the switch port may have LLDP/CDP disabled\n"
+                         "  - you may be behind an unmanaged switch or a hypervisor bridge\n"
+                         "  - try a longer window: nettool lldp -t 120\n")
+        return 1
+    if args.from_pcap:
+        for n in neighbors:
+            sys.stdout.write("\n" + lldpmod.describe(n) + "\n")
+    section("summary")
+    table([[n.get("protocol"), n.get("system_name") or n.get("chassis_id"),
+            n.get("port_id"), n.get("port_vlan_id", ""), n.get("mgmt_addrs") and
+            n["mgmt_addrs"][0]["address"] or ""] for n in neighbors],
+          ["proto", "neighbour", "port", "vlan", "mgmt ip"])
+    if args.pcap:
+        sys.stdout.write("\nframes saved to %s\n" % args.pcap)
+    return 0
+
+
+# --- capture ---------------------------------------------------------------
+
+def cmd_capture(args):
+    stats = capmod.live_capture(
+        ifname=args.interface, count=args.count, duration=args.duration,
+        snaplen=args.snaplen, outfile=args.write, filter_expr=args.filter,
+        promisc=not args.no_promisc, show=not args.quiet and not args.write_only,
+        quiet=args.json)
+    if args.json:
+        _emit_json({
+            "packets": stats.packets, "bytes": stats.bytes,
+            "kernel_dropped": getattr(stats, "kernel_dropped", None),
+            "protocols": dict(stats.protos), "top_talkers": dict(stats.talkers.most_common(20)),
+            "conversations": dict(stats.conversations.most_common(20)),
+            "vlans": dict(stats.vlans), "file": args.write,
+        })
+        return 0
+    stats.report()
+    return 0
+
+
+def cmd_pcap(args):
+    stats = capmod.read_pcap(args.file, filter_expr=args.filter, show=args.print_packets,
+                             limit=args.limit, outfile=args.write)
+    if args.json:
+        _emit_json({"file": args.file, "packets": stats.packets, "bytes": stats.bytes,
+                    "protocols": dict(stats.protos),
+                    "top_talkers": dict(stats.talkers.most_common(20)),
+                    "conversations": dict(stats.conversations.most_common(20))})
+        return 0
+    stats.report()
+    return 0
+
+
+# --- wifi ------------------------------------------------------------------
+
+def _wifi_scan_rows(networks, sort_by):
+    if sort_by == "signal":
+        networks = sorted(networks, key=lambda n: n["signal_dbm"] or -999, reverse=True)
+    elif sort_by == "channel":
+        networks = sorted(networks, key=lambda n: (n.get("band") or "", n.get("channel") or 0))
+    else:
+        networks = sorted(networks, key=lambda n: (n.get("ssid") or "").lower())
+    rows = []
+    for n in networks:
+        rows.append([
+            n.get("ssid") or "(hidden)", n.get("bssid", ""), n.get("band", ""),
+            n.get("channel", ""), "%.0f" % n["signal_dbm"] if n.get("signal_dbm") is not None else "",
+            n.get("quality_pct", ""), n.get("rating", ""),
+            "%d" % n["width_mhz"] if n.get("width_mhz") else "",
+            "" if n.get("utilization_pct") is None else "%.0f%%" % n["utilization_pct"],
+            "" if n.get("stations") is None else n["stations"],
+            ",".join(n.get("standards") or []), ",".join(n.get("security") or []),
+        ])
+    return rows
+
+
+def cmd_wifi_scan(args):
+    networks, source = wifimod.scan(args.interface, use_cache=args.cached)
+    if args.json:
+        _emit_json({"source": source, "networks": networks})
+        return 0
+    section("nearby networks (%d BSS via %s)" % (len(networks), source))
+    table(_wifi_scan_rows(networks, args.sort),
+          ["ssid", "bssid", "band", "ch", "dBm", "qual%", "rating", "width",
+           "util", "sta", "std", "security"])
+    return 0
+
+
+def cmd_wifi_link(args):
+    state = wifimod.link(args.interface)
+    if args.json:
+        _emit_json(state)
+        return 0
+    if not state.get("connected") and state.get("signal_dbm") is None:
+        sys.stdout.write("%s is not associated with any network.\n" % state["interface"])
+        return 1
+    section("association on %s" % state["interface"])
+    rows = [
+        ["ssid", state.get("ssid", "")],
+        ["bssid", state.get("bssid", "")],
+        ["band / channel", "%s GHz / %s" % (state.get("band", "?"), state.get("channel", "?"))],
+        ["frequency", "%s MHz" % state.get("freq", "?")],
+        ["signal", "%s dBm (%s, %s%%)" % (state.get("signal_dbm"), state.get("rating"),
+                                          state.get("quality_pct"))],
+        ["noise", "%s dBm" % state.get("noise_dbm", "?")],
+        ["snr", "%s dB" % state.get("snr_db", "?")],
+        ["tx bitrate", state.get("tx_bitrate", "")],
+        ["rx bitrate", state.get("rx_bitrate", "")],
+    ]
+    station = state.get("station") or {}
+    if station:
+        rows += [
+            ["tx retries", "%s (%s%%)" % (station.get("tx_retries", "?"),
+                                          station.get("retry_pct", "?"))],
+            ["tx failed", "%s (%s%%)" % (station.get("tx_failed", "?"),
+                                         station.get("fail_pct", "?"))],
+            ["connected for", "%ss" % station.get("connected_time", "?")],
+        ]
+    proc = state.get("proc") or {}
+    if proc:
+        rows += [["missed beacons", proc.get("missed_beacons")],
+                 ["rx crypt errors", proc.get("rx_invalid_crypt")]]
+    table(rows, ["field", "value"])
+    return 0
+
+
+def cmd_wifi_survey(args):
+    surveys = wifimod.survey_dump(args.interface)
+    if args.json:
+        _emit_json({"survey": surveys})
+        return 0
+    section("channel airtime survey")
+    rows = []
+    for s in sorted(surveys, key=lambda x: x.get("freq") or 0):
+        if "active_time" not in s:
+            continue
+        rows.append([s.get("channel", "?"), s.get("freq", "?"), s.get("band", ""),
+                     "yes" if s.get("in_use") else "",
+                     s.get("noise_dbm", ""),
+                     "%.0f%%" % s.get("busy_pct", 0),
+                     "%.0f%%" % s.get("rx_pct", 0), "%.0f%%" % s.get("tx_pct", 0),
+                     "%.0f%%" % s.get("interference_pct", 0)])
+    table(rows, ["ch", "freq", "band", "in use", "noise", "busy", "our rx", "our tx",
+                 "other"])
+    sys.stdout.write("\n'other' is airtime the radio saw as busy but could not attribute "
+                     "to our own traffic:\nnon-Wi-Fi interference (microwaves, cameras, "
+                     "cordless phones) or distant co-channel APs.\n")
+    return 0
+
+
+def cmd_wifi_monitor(args):
+    if not args.json:
+        sys.stdout.write("sampling %s every %.1fs for %ds...\n"
+                         % (args.interface or "wifi", args.interval, args.duration))
+
+    def on_sample(s):
+        if args.json:
+            return
+        sys.stdout.write("  %s  %s dBm  ch %s  %s\n" % (
+            time.strftime("%H:%M:%S"), s.get("signal_dbm"), s.get("channel"),
+            s.get("tx_bitrate", "")))
+        sys.stdout.flush()
+
+    result = wifimod.monitor(args.interface, duration=args.duration,
+                             interval=args.interval, on_sample=on_sample)
+    if args.json:
+        _emit_json(result)
+        return 0
+    section("link stability over %ds" % args.duration)
+    table([["samples", result["count"]],
+           ["signal avg", "%s dBm (%s)" % (result.get("signal_avg"), result.get("rating"))],
+           ["signal min/max", "%s / %s dBm" % (result.get("signal_min"),
+                                               result.get("signal_max"))],
+           ["swing", "%s dB" % result.get("signal_swing")],
+           ["std deviation", result.get("stdev")],
+           ["roamed to another AP", "yes" if result.get("roamed") else "no"],
+           ["bssids seen", ", ".join(result.get("bssids") or [])],
+           ["missed beacons", result.get("missed_beacons_delta")]],
+          ["field", "value"])
+    swing = result.get("signal_swing") or 0
+    if swing > 15:
+        sys.stdout.write("\nsignal swings by %.0f dB - multipath, movement or a "
+                         "duty-cycled interferer.\n" % swing)
+    return 0
+
+
+def cmd_wifi_analyze(args):
+    networks, source = wifimod.scan(args.interface, use_cache=args.cached)
+    current = wifimod.link(args.interface)
+    try:
+        survey = wifimod.survey_dump(args.interface)
+    except NetToolError:
+        survey = []
+    report = wifimod.analyze(networks, current, survey)
+    if args.json:
+        _emit_json({"source": source, "report": report, "networks": networks,
+                    "current": current, "survey": survey})
+        return 0
+    section("radio environment (%d BSS via %s)" % (len(networks), source))
+    for band in sorted(report["bands"]):
+        band_report = report["bands"][band]
+        sys.stdout.write("\n%s GHz - %d BSS\n" % (band, band_report["bss_count"]))
+        rows = []
+        for ch in sorted(band_report["channels"]):
+            info = band_report["channels"][ch]
+            rows.append([ch, info["bss"], info["overlapping"],
+                         info["strongest_dbm"], info["strongest_ssid"],
+                         "" if info["utilization_pct"] is None
+                         else "%.0f%%" % info["utilization_pct"],
+                         band_report["congestion_score"].get(ch, "")])
+        table(rows, ["ch", "bss", "overlapping", "strongest", "ssid", "util", "load score"])
+        if band_report.get("best_channel"):
+            sys.stdout.write("  suggested channel: %d (load score %.2f)%s\n"
+                             % (band_report["best_channel"], band_report["best_score"],
+                                "" if band != "2.4" else " - only 1/6/11 avoid overlap"))
+    if current.get("connected"):
+        section("your link")
+        sys.stdout.write("  %s on ch %s, %s dBm (%s)%s\n" % (
+            current.get("ssid"), current.get("channel"), current.get("signal_dbm"),
+            current.get("rating"),
+            ", SNR %s dB" % current["snr_db"] if current.get("snr_db") else ""))
+    section("findings")
+    for level, message in report["findings"]:
+        sys.stdout.write("  %s %s\n" % (SEV_MARK.get(level, "[    ]"), message))
+    return 0
+
+
+# --- ping / trace / mtu ----------------------------------------------------
+
+def cmd_ping(args):
+    stats = pingmod.ping(args.host, count=args.count, interval=args.interval,
+                         timeout=args.timeout, size=args.size,
+                         quiet=args.json, sink=sys.stdout)
+    if args.json:
+        _emit_json({k: v for k, v in stats.items() if k != "rtts"})
+        return 0
+    sys.stdout.write("\n--- %s (%s) ---\n" % (stats["host"], stats["address"]))
+    sys.stdout.write("%d sent, %d received, %.0f%% loss\n"
+                     % (stats["sent"], stats["received"], stats["loss_pct"]))
+    if stats["received"]:
+        sys.stdout.write("rtt min/avg/max = %.2f/%.2f/%.2f ms, jitter %.2f ms\n"
+                         % (stats["rtt_min"], stats["rtt_avg"], stats["rtt_max"],
+                            stats["jitter"] or 0.0))
+    for err in stats["errors"]:
+        sys.stdout.write("error: %s\n" % err)
+    return 0 if stats["received"] else 1
+
+
+def cmd_trace(args):
+    hops = pingmod.traceroute(args.host, max_hops=args.max_hops, probes=args.probes,
+                              timeout=args.timeout, resolve=not args.no_resolve,
+                              sink=None if args.json else sys.stdout)
+    if args.json:
+        _emit_json({"host": args.host, "hops": hops})
+    return 0
+
+
+def cmd_mtu(args):
+    result = pingmod.path_mtu(args.host, low=args.low, high=args.high)
+    if args.json:
+        _emit_json(result)
+        return 0
+    if result["mtu"] is None:
+        sys.stdout.write("path MTU to %s: unknown - %s\n" % (args.host, result["note"]))
+        return 1
+    sys.stdout.write("path MTU to %s (%s): %d bytes\n"
+                     % (args.host, result["address"], result["mtu"]))
+    if result["mtu"] < 1500:
+        sys.stdout.write("that is below the 1500-byte Ethernet default: a tunnel, VPN or "
+                         "PPPoE link is in the path.\n")
+    return 0
+
+
+# --- diag ------------------------------------------------------------------
+
+def cmd_diag(args):
+    report = diagmod.run(args.interface, skip=set(args.skip or ()))
+    if args.json:
+        _emit_json({"verdict": report.verdict(), "worst": report.worst(),
+                    "checks": report.checks, "data": report.data})
+        return 0 if report.worst() != "critical" else 1
+    section("network health check")
+    for check in report.checks:
+        sys.stdout.write("  %s %-9s %s\n" % (SEV_MARK.get(check["severity"], "[    ]"),
+                                             check["check"], check["message"]))
+    sys.stdout.write("\n%s\n" % report.verdict())
+    if not is_root():
+        sys.stdout.write("(running unprivileged - re-run with sudo for ARP, MTU and "
+                         "capture checks)\n")
+    return 0 if report.worst() != "critical" else 1
+
+
+# --- parser ----------------------------------------------------------------
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="nettool",
+        description="Field network diagnostics: LAN discovery, port scanning, LLDP/CDP "
+                    "neighbours, packet capture export and Wi-Fi interference analysis.",
+        epilog="Most commands accept --json for scripting. Raw-socket features "
+               "(capture, lldp, arp sweep, ping, mtu) need root or CAP_NET_RAW.")
+    parser.add_argument("--version", action="version", version="nettool %s" % __version__)
+    sub = parser.add_subparsers(dest="command")
+
+    def add_json(p):
+        p.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+        return p
+
+    p = add_json(sub.add_parser("iface", help="list interfaces, addresses, routes, DNS"))
+    p.add_argument("name", nargs="?", help="only this interface")
+    p.add_argument("-a", "--all", action="store_true", help="include down interfaces")
+    p.add_argument("-v", "--verbose", action="store_true", help="also show IPv6 and ARP")
+    p.set_defaults(func=cmd_iface)
+
+    p = add_json(sub.add_parser("discover", help="find live hosts on the LAN"))
+    p.add_argument("-i", "--interface")
+    p.add_argument("-c", "--cidr", help="subnet to sweep (default: this interface's)")
+    p.add_argument("-m", "--method", choices=["auto", "arp", "icmp", "tcp"], default="auto")
+    p.add_argument("-t", "--timeout", type=float, default=3.0,
+                   help="seconds to wait for ARP replies (default 3)")
+    p.add_argument("--no-resolve", action="store_true", help="skip reverse DNS")
+    p.add_argument("--no-progress", dest="progress", action="store_false", default=True)
+    p.set_defaults(func=cmd_discover)
+
+    p = add_json(sub.add_parser("scan", help="TCP/UDP port scan"))
+    p.add_argument("target", help="IP, hostname, CIDR (10.0.0.0/24) or range (10.0.0.1-50)")
+    p.add_argument("-p", "--ports", default="top",
+                   help="ports: 'top' (default), 'all', '22,80,443' or '1-1024'")
+    p.add_argument("-u", "--udp", action="store_true", help="UDP probe scan instead of TCP")
+    p.add_argument("-t", "--timeout", type=float, default=1.0)
+    p.add_argument("-w", "--workers", type=int, default=256, help="parallel probes")
+    p.add_argument("-b", "--banner", action="store_true",
+                   help="grab service banners / TLS versions from open ports")
+    p.add_argument("--all-states", action="store_true",
+                   help="also report closed and filtered ports")
+    p.add_argument("--csv", action="store_true", help="CSV output")
+    p.add_argument("--no-progress", dest="progress", action="store_false", default=True)
+    p.set_defaults(func=cmd_scan)
+
+    p = add_json(sub.add_parser("lldp", help="LLDP/CDP neighbours: which switch port am I on?"))
+    p.add_argument("-i", "--interface")
+    p.add_argument("-t", "--timeout", type=int, default=65,
+                   help="listen window in seconds (default 65; LLDP repeats every 30)")
+    p.add_argument("--wait-all", action="store_true",
+                   help="keep listening for the whole window instead of stopping at the "
+                        "first neighbour")
+    p.add_argument("--pcap", metavar="FILE", help="also save the frames to a pcap file")
+    p.add_argument("--from-pcap", metavar="FILE", help="parse neighbours out of a capture")
+    p.set_defaults(func=cmd_lldp)
+
+    p = add_json(sub.add_parser("capture", help="capture packets and export a pcap file"))
+    p.add_argument("-i", "--interface")
+    p.add_argument("-w", "--write", metavar="FILE", help="write packets to FILE (pcap)")
+    p.add_argument("-c", "--count", type=int, default=0, help="stop after N packets")
+    p.add_argument("-d", "--duration", type=float, default=0, help="stop after N seconds")
+    p.add_argument("-s", "--snaplen", type=int, default=65535,
+                   help="bytes captured per packet (use 96 for headers only)")
+    p.add_argument("-f", "--filter", help="filter, e.g. 'tcp and port 443', 'host 10.0.0.5'")
+    p.add_argument("-q", "--quiet", action="store_true", help="do not print each packet")
+    p.add_argument("--write-only", action="store_true",
+                   help="write to file without printing packets")
+    p.add_argument("--no-promisc", action="store_true",
+                   help="do not put the interface in promiscuous mode")
+    p.set_defaults(func=cmd_capture)
+
+    p = add_json(sub.add_parser("pcap", help="inspect, filter or split an existing pcap"))
+    p.add_argument("file")
+    p.add_argument("-f", "--filter", help="only count/keep packets matching this filter")
+    p.add_argument("-w", "--write", metavar="FILE", help="write matching packets to FILE")
+    p.add_argument("-P", "--print", dest="print_packets", action="store_true",
+                   help="print a line per packet")
+    p.add_argument("-n", "--limit", type=int, default=0, help="max lines to print")
+    p.set_defaults(func=cmd_pcap)
+
+    wifi_parser = sub.add_parser("wifi", help="wireless scanning and interference analysis")
+    wifi_sub = wifi_parser.add_subparsers(dest="wifi_command")
+
+    q = add_json(wifi_sub.add_parser("scan", help="list nearby networks"))
+    q.add_argument("-i", "--interface")
+    q.add_argument("--cached", action="store_true",
+                   help="use the last scan results instead of triggering a new scan")
+    q.add_argument("--sort", choices=["signal", "channel", "ssid"], default="signal")
+    q.set_defaults(func=cmd_wifi_scan)
+
+    q = add_json(wifi_sub.add_parser("link", help="current association quality"))
+    q.add_argument("-i", "--interface")
+    q.set_defaults(func=cmd_wifi_link)
+
+    q = add_json(wifi_sub.add_parser("survey", help="per-channel airtime / noise survey"))
+    q.add_argument("-i", "--interface")
+    q.set_defaults(func=cmd_wifi_survey)
+
+    q = add_json(wifi_sub.add_parser("monitor", help="watch signal quality over time"))
+    q.add_argument("-i", "--interface")
+    q.add_argument("-d", "--duration", type=int, default=30)
+    q.add_argument("-n", "--interval", type=float, default=1.0)
+    q.set_defaults(func=cmd_wifi_monitor)
+
+    q = add_json(wifi_sub.add_parser("analyze",
+                                     help="diagnose signal, congestion and interference"))
+    q.add_argument("-i", "--interface")
+    q.add_argument("--cached", action="store_true")
+    q.set_defaults(func=cmd_wifi_analyze)
+    wifi_parser.set_defaults(func=lambda a: (wifi_parser.print_help(), 0)[1],
+                             wifi_command=None)
+
+    p = add_json(sub.add_parser("ping", help="ICMP echo with loss and jitter stats"))
+    p.add_argument("host")
+    p.add_argument("-c", "--count", type=int, default=5)
+    p.add_argument("-n", "--interval", dest="interval", type=float, default=0.5)
+    p.add_argument("-t", "--timeout", type=float, default=1.0)
+    p.add_argument("-s", "--size", type=int, default=32, help="payload bytes")
+    p.set_defaults(func=cmd_ping)
+
+    p = add_json(sub.add_parser("trace", help="ICMP traceroute"))
+    p.add_argument("host")
+    p.add_argument("-m", "--max-hops", type=int, default=30)
+    p.add_argument("-q", "--probes", type=int, default=3)
+    p.add_argument("-t", "--timeout", type=float, default=1.5)
+    p.add_argument("--no-resolve", action="store_true")
+    p.set_defaults(func=cmd_trace)
+
+    p = add_json(sub.add_parser("mtu", help="discover the path MTU to a host"))
+    p.add_argument("host")
+    p.add_argument("--low", type=int, default=576)
+    p.add_argument("--high", type=int, default=9000)
+    p.set_defaults(func=cmd_mtu)
+
+    p = add_json(sub.add_parser("diag", help="run the full health check"))
+    p.add_argument("-i", "--interface")
+    p.add_argument("--skip", action="append",
+                   choices=["address", "gateway", "dns", "internet", "wifi", "mtu"],
+                   help="skip a check (repeatable)")
+    p.set_defaults(func=cmd_diag)
+
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if not getattr(args, "func", None):
+        parser.print_help()
+        return 0
+    try:
+        return args.func(args) or 0
+    except NetToolError as exc:
+        sys.stderr.write("error: %s\n" % exc)
+        return 2
+    except KeyboardInterrupt:
+        sys.stderr.write("\ninterrupted\n")
+        return 130
+    except BrokenPipeError:
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
