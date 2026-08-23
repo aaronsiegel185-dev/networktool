@@ -450,6 +450,40 @@ class TestWifiParsing(unittest.TestCase):
         self.assertIn("redacted", by_source["wdutil"][1])
         self.assertIn("system_profiler", by_source)
 
+    def test_blanked_neighbours_are_not_collapsed_into_one_row(self):
+        # Four BSSes, three of them on channel 6, all names blanked. Keying the
+        # dedup on "<redacted>" merged them into a single row and most of the
+        # neighbourhood vanished.
+        payload = {"SPAirPortDataType": [{"spairport_airport_interfaces": [{
+            "_name": "en0",
+            "spairport_airport_other_local_wireless_networks": [
+                {"_name": "<redacted>", "spairport_network_channel": "6 (2GHz, 20MHz)",
+                 "spairport_signal_noise": "-50 dBm / -90 dBm"},
+                {"_name": "<redacted>", "spairport_network_channel": "6 (2GHz, 20MHz)",
+                 "spairport_signal_noise": "-66 dBm / -90 dBm"},
+                {"_name": "<redacted>", "spairport_network_channel": "6 (2GHz, 20MHz)",
+                 "spairport_signal_noise": "-78 dBm / -90 dBm"},
+                {"_name": "<redacted>", "spairport_network_channel": "36 (5GHz, 80MHz)",
+                 "spairport_signal_noise": "-55 dBm / -92 dBm"},
+            ],
+        }]}]}
+        networks = darwin.parse_airport_json(json.dumps(payload))
+        self.assertEqual(len(networks), 4)
+        self.assertTrue(all(n["redacted"] for n in networks))
+        on_six = [n["signal_dbm"] for n in networks if n["channel"] == 6]
+        self.assertEqual(sorted(on_six), [-78.0, -66.0, -50.0])
+
+    def test_named_duplicates_are_still_collapsed(self):
+        # The dedup still has a job when the names are visible.
+        payload = {"SPAirPortDataType": [{"spairport_airport_interfaces": [{
+            "_name": "en0",
+            "spairport_airport_other_local_wireless_networks": [
+                {"_name": "CoffeeShop", "spairport_network_channel": "6 (2GHz, 20MHz)"},
+                {"_name": "CoffeeShop", "spairport_network_channel": "6 (2GHz, 20MHz)"},
+            ],
+        }]}]}
+        self.assertEqual(len(darwin.parse_airport_json(json.dumps(payload))), 1)
+
     def test_no_wifi_data_is_not_a_crash(self):
         self.assertEqual(darwin.parse_airport_json(json.dumps({"SPAirPortDataType": []})), [])
         self.assertFalse(darwin.parse_airport_current(json.dumps({}))["connected"])

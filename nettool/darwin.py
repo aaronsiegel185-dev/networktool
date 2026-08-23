@@ -523,13 +523,16 @@ def parse_airport_json(payload):
         name = entry.get("_name", "")
         channel, band, width = parse_channel_spec(entry.get("spairport_network_channel", ""))
         signal, noise = parse_signal_noise(entry.get("spairport_signal_noise", ""))
-        key = (name, channel)
+        bssid = entry.get("spairport_network_bssid", "")
+        redacted = is_redacted(name, bssid)
+        # Dedup on the name macOS gave us, but never show the placeholder itself
+        # - and never dedup *by* the placeholder: with every name blanked to
+        # "<redacted>", keying on it collapses every BSS on a channel into one
+        # row and most of the neighbourhood disappears.
+        key = (len(networks), channel) if redacted else (name, channel)
         if key in seen:
             continue
         seen.add(key)
-        bssid = entry.get("spairport_network_bssid", "")
-        # Dedup on the name macOS gave us, but never show the placeholder itself.
-        redacted = is_redacted(name, bssid)
         networks.append({
             "ssid": "" if redacted else name,
             # macOS does not expose neighbouring BSSIDs without extra entitlements.

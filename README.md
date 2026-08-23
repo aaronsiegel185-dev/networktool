@@ -106,6 +106,14 @@ Two macOS-specific caveats worth knowing:
   gave one, otherwise by channel and closest signal. Everything else in the Wi-Fi
   views still comes from the CLI, because macOS redacts none of it.
 
+  Neighbours need more than renaming, because with the names blanked they are not
+  all in the list to begin with: `system_profiler` reports one row per network
+  *name*, so a blanked name means one row per channel and the rest of the
+  neighbourhood is simply absent. CoreWLAN reports one row per BSS, so the app
+  adds back whatever the CLI could not see. **Deep scan**, in the Networks view,
+  asks the radio to sweep now rather than reading its cache - a few seconds off
+  the air in exchange for every BSS in range, named and with its address.
+
   ```bash
   python3 -m nettool wifi permission   # status, and what every name source says
   ```

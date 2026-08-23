@@ -71,6 +71,8 @@ pub struct WifiTab {
     names_recovered: bool,
     /// What CoreWLAN last returned, shown when names stay hidden anyway.
     corewlan_note: Option<String>,
+    /// Results of an active CoreWLAN scan, kept until the next one.
+    deep_scan: Vec<macwifi::Neighbour>,
     permission_status: Option<i32>,
     permission_deadline: Option<Instant>,
     permission_error: Option<String>,
@@ -104,6 +106,7 @@ impl Default for WifiTab {
             hosts_error: None,
             names_recovered: false,
             corewlan_note: None,
+            deep_scan: Vec::new(),
             permission_status: None,
             permission_deadline: None,
             permission_error: None,
@@ -484,6 +487,31 @@ impl WifiTab {
                     self.sort = sort;
                 }
             }
+            ui.separator();
+            // The CLI's list comes from system_profiler, which reports one row
+            // per network name - and with the names blanked, one row per
+            // channel. An active CoreWLAN scan sees each BSS separately.
+            if ui
+                .button("Deep scan")
+                .on_hover_text(
+                    "Ask the radio to sweep now, through CoreWLAN. Sees every BSS                      separately and names them, at the cost of a few seconds off the air.",
+                )
+                .clicked()
+            {
+                self.deep_scan = macwifi::scan_now();
+                self.corewlan_note = Some(format!(
+                    "deep scan: {} BSS seen by CoreWLAN",
+                    self.deep_scan.len()
+                ));
+                self.name_the_hidden();
+            }
+            if !self.deep_scan.is_empty() {
+                ui.label(
+                    egui::RichText::new(format!("{} BSS from CoreWLAN", self.deep_scan.len()))
+                        .size(11.0)
+                        .color(widgets::MUTED),
+                );
+            }
         });
 
         if let Some(report) = &self.scan_report {
@@ -679,7 +707,11 @@ impl WifiTab {
         if !self.names_hidden() {
             return;
         }
-        let found = macwifi::scan();
+        // The radio's cache, unless an active scan found more.
+        let mut found = macwifi::scan();
+        if self.deep_scan.len() > found.len() {
+            found = self.deep_scan.clone();
+        }
         let mine = macwifi::link();
         // Say what CoreWLAN actually handed over. Without this, "the name is
         // still blank" is indistinguishable from "we never asked".
@@ -700,10 +732,13 @@ impl WifiTab {
             name_link(report, mine.as_ref());
         }
         if let Some(report) = self.scan_report.as_mut() {
-            self.names_recovered = macwifi::fill_names(&mut report.networks, &found) > 0;
+            let named = macwifi::fill_names(&mut report.networks, &found);
+            let added = macwifi::append_unseen(&mut report.networks, &found);
+            self.names_recovered = named > 0 || added > 0;
         }
         if let Some(report) = self.analyze_report.as_mut() {
-            let filled = macwifi::fill_names(&mut report.networks, &found);
+            let filled = macwifi::fill_names(&mut report.networks, &found)
+                + macwifi::append_unseen(&mut report.networks, &found);
             name_link(&mut report.current, mine.as_ref());
             // The per-channel table carries its own copy of the loudest name.
             let names: Vec<(i64, String)> = report

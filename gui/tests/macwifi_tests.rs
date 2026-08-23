@@ -1,6 +1,6 @@
 //! Putting names back on the networks macOS blanked.
 
-use nettool_gui::macwifi::{fill_names, Neighbour};
+use nettool_gui::macwifi::{append_unseen, fill_names, Neighbour};
 use nettool_gui::model::Bss;
 
 fn blanked(bssid: &str, channel: i64, signal: f64) -> Bss {
@@ -156,4 +156,64 @@ fn without_a_usable_address_there_is_nothing_to_look_up() {
     };
     let found = vec![seen("HomeNet", "02:00:00:00:00:00", 48, -42)];
     assert_eq!(nettool_gui::macwifi::resolve_own_ssid(&withheld, &found), None);
+}
+
+#[test]
+fn networks_the_cli_never_saw_are_added() {
+    // system_profiler collapsed everything on channel 36 into one blanked row.
+    let mut networks = vec![blanked("", 36, -58.0)];
+    let found = vec![
+        seen("Named", "aa:bb:cc:00:00:01", 36, -57),
+        seen("AlsoHere", "aa:bb:cc:00:00:02", 36, -71),
+        seen("Upstairs", "aa:bb:cc:00:00:03", 149, -80),
+    ];
+    assert_eq!(fill_names(&mut networks, &found), 1);
+    assert_eq!(networks[0].ssid, "Named");
+
+    assert_eq!(append_unseen(&mut networks, &found), 2);
+    let names: Vec<&str> = networks.iter().map(|n| n.ssid.as_str()).collect();
+    assert_eq!(names, ["Named", "AlsoHere", "Upstairs"]);
+    assert_eq!(networks[2].band, "5");
+    assert_eq!(networks[2].signal_dbm, Some(-80.0));
+}
+
+#[test]
+fn a_network_already_listed_is_not_added_twice() {
+    let mut networks = vec![Bss {
+        ssid: "HomeNet".into(),
+        bssid: "aa:bb:cc:00:00:01".into(),
+        channel: Some(6),
+        signal_dbm: Some(-50.0),
+        ..Default::default()
+    }];
+    // Same BSS, and the same name on the same channel without an address.
+    let found = vec![
+        seen("HomeNet", "AA:BB:CC:00:00:01", 6, -50),
+        seen("HomeNet", "", 6, -50),
+    ];
+    assert_eq!(append_unseen(&mut networks, &found), 0);
+    assert_eq!(networks.len(), 1);
+}
+
+#[test]
+fn the_same_name_on_another_channel_is_its_own_bss() {
+    // A dual-band AP is two BSSes and belongs in the list twice.
+    let mut networks = vec![Bss {
+        ssid: "HomeNet".into(),
+        channel: Some(6),
+        signal_dbm: Some(-50.0),
+        ..Default::default()
+    }];
+    let found = vec![seen("HomeNet", "aa:bb:cc:00:00:02", 149, -62)];
+    assert_eq!(append_unseen(&mut networks, &found), 1);
+    assert_eq!(networks[1].channel, Some(149));
+    assert_eq!(networks[1].band, "5");
+}
+
+#[test]
+fn a_nameless_corewlan_entry_is_not_worth_adding() {
+    let mut networks: Vec<Bss> = Vec::new();
+    let found = vec![seen("", "aa:bb:cc:00:00:01", 6, -50)];
+    assert_eq!(append_unseen(&mut networks, &found), 0);
+    assert!(networks.is_empty());
 }

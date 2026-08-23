@@ -101,6 +101,50 @@ pub fn fill_names(networks: &mut [Bss], found: &[Neighbour]) -> usize {
     filled
 }
 
+/// Add the networks CoreWLAN can see and the CLI could not.
+///
+/// system_profiler reports one row per network name, and with every name
+/// blanked that is one row per channel - most of the neighbourhood simply is not
+/// in the list to be renamed. CoreWLAN reports one row per BSS with its address,
+/// so anything it saw that did not match an existing row is a network that was
+/// missing rather than a duplicate.
+pub fn append_unseen(networks: &mut Vec<Bss>, found: &[Neighbour]) -> usize {
+    let mut added = 0;
+    for entry in found {
+        if entry.ssid.is_empty() {
+            continue;
+        }
+        let address = usable_bssid(&entry.bssid);
+        let known = networks.iter().any(|net| {
+            let same_bss = !address.is_empty() && usable_bssid(&net.bssid) == address;
+            let same_name_here = net.ssid == entry.ssid && net.channel == Some(entry.channel);
+            same_bss || same_name_here
+        });
+        if known {
+            continue;
+        }
+        networks.push(Bss {
+            ssid: entry.ssid.clone(),
+            bssid: address,
+            band: band_of(entry.channel).to_string(),
+            channel: Some(entry.channel),
+            signal_dbm: Some(entry.rssi as f64),
+            ..Default::default()
+        });
+        added += 1;
+    }
+    added
+}
+
+/// The band a channel number belongs to, as the reports label it.
+fn band_of(channel: i64) -> &'static str {
+    match channel {
+        1..=14 => "2.4",
+        15..=196 => "5",
+        _ => "6",
+    }
+}
+
 /// Our own network's name, taken from the scan list by address.
 ///
 /// CWInterface.ssid comes back empty in cases where the BSSID does not - a name
@@ -254,6 +298,60 @@ mod imp {
         }
     }
 
+    unsafe fn send_ptr2(
+        receiver: *mut c_void,
+        message: &str,
+        first: *mut c_void,
+        second: *mut c_void,
+    ) -> *mut c_void {
+        if receiver.is_null() {
+            return std::ptr::null_mut();
+        }
+        let send: unsafe extern "C" fn(
+            *mut c_void,
+            *mut c_void,
+            *mut c_void,
+            *mut c_void,
+        ) -> *mut c_void =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        send(receiver, selector(message), first, second)
+    }
+
+    /// An NSSet of CWNetwork as our own list.
+    unsafe fn networks_in(results: *mut c_void) -> Vec<Neighbour> {
+        let all = send_ptr(results, "allObjects");
+        let count = send_isize(all, "count").max(0) as usize;
+        (0..count)
+            .map(|index| neighbour(send_ptr_index(all, "objectAtIndex:", index)))
+            .filter(|n| !n.ssid.is_empty())
+            .collect()
+    }
+
+    /// Ask the radio to go and look now.
+    ///
+    /// Takes a few seconds and briefly interrupts traffic, so it is only ever
+    /// run when asked for - but it is the only way to see a neighbour the cache
+    /// has not heard from lately.
+    pub fn scan_now() -> Vec<Neighbour> {
+        unsafe {
+            let iface = interface();
+            if iface.is_null() {
+                return Vec::new();
+            }
+            let mut error: *mut c_void = std::ptr::null_mut();
+            let results = send_ptr2(
+                iface,
+                "scanForNetworksWithName:error:",
+                std::ptr::null_mut(),
+                &mut error as *mut *mut c_void as *mut c_void,
+            );
+            if results.is_null() {
+                return Vec::new();
+            }
+            networks_in(results)
+        }
+    }
+
     /// Neighbours from the radio's last scan.
     ///
     /// Cached results only: a live scan takes seconds and knocks the link about,
@@ -265,13 +363,7 @@ mod imp {
             if iface.is_null() {
                 return Vec::new();
             }
-            let results = send_ptr(iface, "cachedScanResults");
-            let all = send_ptr(results, "allObjects");
-            let count = send_isize(all, "count").max(0) as usize;
-            (0..count)
-                .map(|index| neighbour(send_ptr_index(all, "objectAtIndex:", index)))
-                .filter(|n| !n.ssid.is_empty())
-                .collect()
+            networks_in(send_ptr(iface, "cachedScanResults"))
         }
     }
 }
@@ -286,6 +378,9 @@ mod imp {
     pub fn scan() -> Vec<Neighbour> {
         Vec::new()
     }
+    pub fn scan_now() -> Vec<Neighbour> {
+        Vec::new()
+    }
 }
 
-pub use imp::{link, scan};
+pub use imp::{link, scan, scan_now};
