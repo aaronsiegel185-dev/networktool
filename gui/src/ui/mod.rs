@@ -167,11 +167,12 @@ pub fn job_footer(ui: &mut egui::Ui, job: &Option<Job>, error: &Option<String>) 
 pub fn hidden_names_hint(ui: &mut egui::Ui) {
     ui.label(
         egui::RichText::new(
-            "macOS hid the neighbouring network names: it blanks them for apps without \
-             Location Services. Your own network is read back from the interface \
-             configuration. To see the rest, turn nettool on under System Settings > \
-             Privacy & Security > Location Services. Signal and channel figures are \
-             unaffected.",
+            "macOS hid these network names: it blanks them for anything without Location \
+             Services. Granting it to nettool fills them in here, in the app - the \
+             command line cannot show them however it is run, because it reads names \
+             through system_profiler and wdutil, which macOS holds responsible for \
+             themselves rather than for nettool. Signal, channel and the interference \
+             analysis are unaffected either way.",
         )
         .color(widgets::MUTED)
         .size(11.0),

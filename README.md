@@ -97,6 +97,15 @@ Two macOS-specific caveats worth knowing:
   the button appears whenever a result comes back blanked. Answer the prompt, then
   scan again.
 
+  The grant only helps inside the app, and that is not a shortcoming of the CLI
+  that can be fixed: nettool reads names through `system_profiler` and `wdutil`,
+  and macOS holds those Apple-signed binaries responsible for themselves rather
+  than for whoever launched them, so the permission never reaches them however
+  nettool is run. The app therefore reads the names itself, from CoreWLAN
+  in-process, and fills them into what the CLI returned - by BSSID where macOS
+  gave one, otherwise by channel and closest signal. Everything else in the Wi-Fi
+  views still comes from the CLI, because macOS redacts none of it.
+
   ```bash
   python3 -m nettool wifi permission   # status, and what every name source says
   ```

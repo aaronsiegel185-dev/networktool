@@ -10,6 +10,7 @@ use super::{
 };
 use super::netmap;
 use crate::maclocation;
+use crate::macwifi;
 use crate::model::{
     Bss, DiscoverReport, IfaceReport, SurveyEntry, WifiAnalyzeReport, WifiLink, WifiScanReport,
     WirelessSurvey,
@@ -66,6 +67,8 @@ pub struct WifiTab {
     survey_report: Option<WirelessSurvey>,
     survey_error: Option<String>,
 
+    /// Set once CoreWLAN has actually given a blanked network its name back.
+    names_recovered: bool,
     permission_status: Option<i32>,
     permission_deadline: Option<Instant>,
     permission_error: Option<String>,
@@ -97,6 +100,7 @@ impl Default for WifiTab {
             hosts_job: None,
             hosts_report: None,
             hosts_error: None,
+            names_recovered: false,
             permission_status: None,
             permission_deadline: None,
             permission_error: None,
@@ -212,6 +216,9 @@ impl WifiTab {
         changed |= poll_into(&mut self.survey_job, &mut self.survey_report,
                              &mut self.survey_error);
         changed |= self.poll_permission();
+        if changed {
+            self.name_the_hidden();
+        }
 
         if let Some(job) = self.monitor_job.as_mut() {
             let updated = job.poll();
@@ -664,6 +671,51 @@ impl WifiTab {
         job_footer(ui, &self.link_job, &self.link_error);
     }
 
+    /// Fill in the names macOS blanked, from CoreWLAN inside this process.
+    ///
+    /// The CLI cannot do this however it is run: it reaches the names through
+    /// `system_profiler` and `wdutil`, Apple-signed binaries that macOS holds
+    /// responsible for themselves, so nettool.app's Location Services grant
+    /// never reaches them. Asked from in here, the same grant applies.
+    fn name_the_hidden(&mut self) {
+        if !self.names_hidden() {
+            return;
+        }
+        let found = macwifi::scan();
+        let mine = macwifi::link();
+        if found.is_empty() && mine.is_none() {
+            return;
+        }
+
+        for report in [self.link_report.as_mut()].into_iter().flatten() {
+            name_link(report, mine.as_ref());
+        }
+        if let Some(report) = self.scan_report.as_mut() {
+            self.names_recovered = macwifi::fill_names(&mut report.networks, &found) > 0;
+        }
+        if let Some(report) = self.analyze_report.as_mut() {
+            let filled = macwifi::fill_names(&mut report.networks, &found);
+            name_link(&mut report.current, mine.as_ref());
+            // The per-channel table carries its own copy of the loudest name.
+            let names: Vec<(i64, String)> = report
+                .networks
+                .iter()
+                .filter(|n| !n.ssid.is_empty())
+                .filter_map(|n| n.channel.map(|c| (c, n.ssid.clone())))
+                .collect();
+            for band in report.report.bands.values_mut() {
+                for (channel, info) in band.channels.iter_mut() {
+                    if info.strongest_ssid.starts_with("(hidden") {
+                        if let Some((_, name)) = names.iter().find(|(c, _)| c == channel) {
+                            info.strongest_ssid = name.clone();
+                        }
+                    }
+                }
+            }
+            self.names_recovered |= filled > 0;
+        }
+    }
+
     /// True while we are still waiting for an answer to the system prompt.
     fn permission_pending(&self) -> bool {
         self.permission_deadline.is_some()
@@ -779,10 +831,12 @@ impl WifiTab {
     /// True once something we have actually fetched came back with a blanked name.
     fn names_hidden(&self) -> bool {
         let link = self.link_report.as_ref().map(|l| l.redacted).unwrap_or(false);
+        // Deliberately the rows themselves, not the report's summary flag: once
+        // CoreWLAN has named them the hint has nothing left to explain.
         let analyze = self
             .analyze_report
             .as_ref()
-            .map(|r| r.report.redacted || r.current.redacted)
+            .map(|r| r.current.redacted || r.networks.iter().any(|n| n.redacted))
             .unwrap_or(false);
         let scan = self
             .scan_report
@@ -1115,4 +1169,18 @@ fn poll_into<T: serde::de::DeserializeOwned>(
         }
     }
     changed
+}
+
+/// Give our own association its name back, if CoreWLAN could see it.
+fn name_link(link: &mut WifiLink, mine: Option<&macwifi::Neighbour>) {
+    let Some(mine) = mine else {
+        return;
+    };
+    if link.ssid.is_empty() && !mine.ssid.is_empty() {
+        link.ssid = mine.ssid.clone();
+        link.redacted = false;
+    }
+    if link.bssid.is_empty() && !mine.bssid.is_empty() {
+        link.bssid = mine.bssid.clone();
+    }
 }
