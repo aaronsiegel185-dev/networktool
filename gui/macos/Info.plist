@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>nettool</string>
+    <key>CFBundleDisplayName</key>
+    <string>nettool</string>
+    <key>CFBundleExecutable</key>
+    <string>nettool-gui</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.nettool.gui</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>nettool</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>MIT licensed</string>
+    <!-- macOS gates Wi-Fi network names behind Location Services. Without this
+         permission the SSID and BSSID come back redacted; signal, channel and the
+         interference analysis still work. -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>nettool reads the name and signal strength of nearby Wi-Fi networks to diagnose interference. macOS requires location permission before it will reveal network names.</string>
+</dict>
+</plist>

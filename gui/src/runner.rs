@@ -73,6 +73,13 @@ impl Settings {
 fn candidate_dirs() -> Vec<String> {
     let mut dirs = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
+        // macOS app bundle: Contents/MacOS/nettool-gui -> Contents/Resources/nettool
+        if let Some(macos_dir) = exe.parent() {
+            let resources = macos_dir.join("../Resources");
+            if resources.join("nettool").join("cli.py").exists() {
+                dirs.push(resources.to_string_lossy().to_string());
+            }
+        }
         // target/{debug,release}/nettool-gui -> repo root is three levels up.
         let mut path = exe.clone();
         for _ in 0..4 {
@@ -368,17 +375,19 @@ impl Job {
 }
 
 /// True when this process already has root, so the UI can stop nagging about sudo.
-/// Reads /proc/self/status rather than pulling in libc for one call.
+/// Cached: the hint is evaluated on every frame.
 pub fn running_as_root() -> bool {
-    match std::fs::read_to_string("/proc/self/status") {
-        Ok(status) => status
-            .lines()
-            .find_map(|line| line.strip_prefix("Uid:"))
-            .and_then(|line| line.split_whitespace().nth(1))
-            .map(|euid| euid == "0")
-            .unwrap_or(false),
-        Err(_) => false,
-    }
+    static IS_ROOT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *IS_ROOT.get_or_init(|| {
+        #[cfg(unix)]
+        {
+            unsafe { libc::geteuid() == 0 }
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    })
 }
 
 /// Turn `&["scan", "10.0.0.1"]` into owned args - keeps call sites readable.

@@ -3,76 +3,15 @@
 import collections
 import os
 import signal
-import socket
-import struct
 import sys
 import time
 
 from . import decode as dec
 from . import iface as ifmod
+from .link import open_link
 from .pcap import PcapReader, PcapWriter, LINKTYPE_ETHERNET
 from .pfilter import compile_filter
-from .util import NetToolError, human_bytes, human_secs, require_linux, require_root, table
-
-ETH_P_ALL = 0x0003
-SOL_PACKET = 263
-PACKET_ADD_MEMBERSHIP = 1
-PACKET_MR_PROMISC = 1
-PACKET_STATISTICS = 6
-SO_TIMESTAMPNS = 35
-SCM_TIMESTAMPNS = 35
-
-
-def open_capture_socket(ifname, promisc=True, snaplen=65535, bufsize=4 * 1024 * 1024):
-    require_linux("packet capture")
-    require_root("packet capture")
-    sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_ALL))
-    try:
-        sock.bind((ifname, 0))
-    except OSError as exc:
-        sock.close()
-        raise NetToolError("cannot capture on %s: %s" % (ifname, exc))
-    try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, bufsize)
-    except OSError:
-        pass
-    try:
-        sock.setsockopt(socket.SOL_SOCKET, SO_TIMESTAMPNS, 1)
-    except OSError:
-        pass
-    if promisc:
-        idx = ifmod.ifindex(ifname)
-        mreq = struct.pack("iHH8s", idx, PACKET_MR_PROMISC, 0, b"")
-        try:
-            sock.setsockopt(SOL_PACKET, PACKET_ADD_MEMBERSHIP, mreq)
-        except OSError as exc:
-            sys.stderr.write("warning: could not enable promiscuous mode: %s\n" % exc)
-    sock.settimeout(0.5)
-    return sock
-
-
-def _recv_with_ts(sock, snaplen):
-    """Return (data, timestamp) using kernel timestamps when available."""
-    try:
-        data, ancdata, _flags, _addr = sock.recvmsg(snaplen, socket.CMSG_SPACE(16))
-    except (AttributeError, OSError):
-        return sock.recv(snaplen), time.time()
-    ts = None
-    for level, ctype, cdata in ancdata:
-        if level == socket.SOL_SOCKET and ctype == SCM_TIMESTAMPNS and len(cdata) >= 16:
-            sec, nsec = struct.unpack("qq", cdata[:16])
-            ts = sec + nsec / 1e9
-            break
-    return data, ts if ts is not None else time.time()
-
-
-def kernel_drops(sock):
-    try:
-        raw = sock.getsockopt(SOL_PACKET, PACKET_STATISTICS, 8)
-        received, dropped = struct.unpack("II", raw)
-        return received, dropped
-    except OSError:
-        return None, None
+from .util import NetToolError, human_bytes, human_secs, table
 
 
 class Stats(object):
@@ -150,8 +89,8 @@ def live_capture(ifname=None, count=0, duration=0, snaplen=65535, outfile=None,
     if not ifname:
         raise NetToolError("no capture interface found; pass -i <iface>")
     match = compile_filter(filter_expr)
-    sock = open_capture_socket(ifname, promisc=promisc, snaplen=snaplen)
-    writer = PcapWriter(outfile, LINKTYPE_ETHERNET, snaplen) if outfile else None
+    link = open_link(ifname, promisc=promisc, snaplen=snaplen)
+    writer = PcapWriter(outfile, link.linktype, snaplen) if outfile else None
     stats = Stats()
     stop = {"now": False}
 
@@ -171,29 +110,29 @@ def live_capture(ifname=None, count=0, duration=0, snaplen=65535, outfile=None,
         while not stop["now"]:
             if duration and time.time() - started >= duration:
                 break
-            try:
-                data, ts = _recv_with_ts(sock, snaplen)
-            except socket.timeout:
+            batch = link.read(timeout=0.5)
+            if not batch:
                 continue
-            except OSError as exc:
-                raise NetToolError("capture read failed: %s" % exc)
-            seen += 1
-            pkt = dec.decode(data)
-            if not match(pkt):
-                continue
-            stats.add(pkt, ts)
-            if writer:
-                writer.write(data, ts)
-            if show and not quiet:
-                sink.write("%s %s\n" % (time.strftime("%H:%M:%S", time.localtime(ts)),
-                                        dec.summary(pkt)))
-                sink.flush()
+            for data, ts in batch:
+                seen += 1
+                pkt = dec.decode(data)
+                if not match(pkt):
+                    continue
+                stats.add(pkt, ts)
+                if writer:
+                    writer.write(data, ts)
+                if show and not quiet:
+                    sink.write("%s %s\n" % (time.strftime("%H:%M:%S", time.localtime(ts)),
+                                            dec.summary(pkt)))
+                    sink.flush()
+                if count and stats.packets >= count:
+                    break
             if count and stats.packets >= count:
                 break
     finally:
         signal.signal(signal.SIGINT, old_handler)
-        received, dropped = kernel_drops(sock)
-        sock.close()
+        received, dropped = link.stats()
+        link.close()
         if writer:
             writer.close()
         stats.kernel_seen = received

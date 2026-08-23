@@ -5,18 +5,22 @@ import os
 import select
 import socket
 import struct
+import sys
 import time
 
 from .util import NetToolError, reverse_dns
+
+IS_DARWIN = sys.platform == "darwin"
 
 ICMP_ECHO = 8
 ICMP_ECHOREPLY = 0
 ICMP_UNREACH = 3
 ICMP_TIME_EXCEEDED = 11
-IP_MTU_DISCOVER = 10
+IP_MTU_DISCOVER = 10          # Linux
 IP_PMTUDISC_DO = 2
 IP_MTU = 14
 IP_RECVERR = 11
+IP_DONTFRAG = 28              # macOS / BSD equivalent of PMTUDISC_DO
 
 
 def checksum(data):
@@ -60,13 +64,18 @@ def _echo_packet(ident, seq, payload_size=32):
     return header + payload
 
 
-def _parse_icmp(data, raw_mode):
-    """Return (type, code, ident, seq, src_offset_payload)."""
+def _parse_icmp(data, raw_mode=None):
+    """Return (type, code, ident, seq, payload).
+
+    Whether the kernel hands back the IP header depends on the platform and the socket
+    type (Linux ping sockets strip it, BSD raw and datagram ICMP sockets do not), so
+    detect it from the bytes instead of assuming.
+    """
     offset = 0
-    if raw_mode:
-        if len(data) < 20:
-            return None
-        offset = (data[0] & 0x0F) * 4
+    if len(data) >= 20 and (data[0] >> 4) == 4:
+        header_len = (data[0] & 0x0F) * 4
+        if 20 <= header_len <= len(data) - 8:
+            offset = header_len
     if len(data) < offset + 8:
         return None
     itype, code, _chk, ident, seq = struct.unpack("!BBHHH", data[offset:offset + 8])
@@ -104,7 +113,7 @@ def ping(host, count=4, interval=0.5, timeout=1.0, size=32, quiet=True, sink=Non
                 if not ready:
                     break
                 data, addr = sock.recvfrom(2048)
-                parsed = _parse_icmp(data, raw_mode)
+                parsed = _parse_icmp(data)
                 if not parsed:
                     continue
                 itype, code, rid, rseq, _rest = parsed
@@ -169,7 +178,7 @@ def traceroute(host, max_hops=30, probes=3, timeout=1.5, resolve=True, sink=None
                     if not select.select([sock], [], [], remaining)[0]:
                         break
                     data, addr = sock.recvfrom(2048)
-                    parsed = _parse_icmp(data, raw_mode)
+                    parsed = _parse_icmp(data)
                     if not parsed:
                         continue
                     itype, _code, _rid, _rseq, rest = parsed
@@ -213,9 +222,12 @@ def path_mtu(host, low=576, high=9000, timeout=1.0):
     ident = (os.getpid() + 2) & 0xFFFF
     try:
         try:
-            sock.setsockopt(socket.IPPROTO_IP, IP_MTU_DISCOVER, IP_PMTUDISC_DO)
+            if IS_DARWIN:
+                sock.setsockopt(socket.IPPROTO_IP, IP_DONTFRAG, 1)
+            else:
+                sock.setsockopt(socket.IPPROTO_IP, IP_MTU_DISCOVER, IP_PMTUDISC_DO)
         except OSError as exc:
-            raise NetToolError("cannot set DF bit: %s" % exc)
+            raise NetToolError("cannot set the don't-fragment bit: %s" % exc)
         sock.settimeout(timeout)
 
         def reaches(payload):
@@ -231,7 +243,7 @@ def path_mtu(host, low=576, high=9000, timeout=1.0):
                 if not select.select([sock], [], [], deadline - time.time())[0]:
                     continue
                 data, addr = sock.recvfrom(2048)
-                parsed = _parse_icmp(data, raw_mode)
+                parsed = _parse_icmp(data)
                 if parsed and parsed[0] == ICMP_ECHOREPLY:
                     return True, None
                 if parsed and parsed[0] == ICMP_UNREACH and parsed[1] == 4:

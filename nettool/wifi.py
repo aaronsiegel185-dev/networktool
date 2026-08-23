@@ -6,10 +6,13 @@ stripped-down field box.
 """
 
 import re
+import sys
 import time
 
 from . import iface as ifmod
 from .util import NetToolError, have_cmd, run_cmd
+
+IS_DARWIN = sys.platform == "darwin"
 
 # --- channel / frequency maths ---------------------------------------------
 
@@ -106,7 +109,27 @@ def signal_weight(dbm):
 
 
 def wireless_interfaces():
+    if IS_DARWIN:
+        from . import darwin
+
+        return darwin.wireless_interfaces()
     return [n for n in ifmod.list_names() if ifmod.is_wireless(n)]
+
+
+def _rate_networks(networks):
+    """Fill in the derived rating fields the views expect."""
+    for net in networks:
+        net.setdefault("freq", None)
+        if net.get("freq") is None and net.get("channel") and net.get("band"):
+            net["freq"] = channel_to_freq(net["channel"], net["band"]) or None
+        net["quality_pct"] = quality_percent(net.get("signal_dbm"))
+        net["rating"] = signal_rating(net.get("signal_dbm"))
+        net.setdefault("security", [])
+        net.setdefault("standards", [])
+        net.setdefault("width_mhz", 20)
+        net.setdefault("utilization_pct", None)
+        net.setdefault("stations", None)
+    return networks
 
 
 def pick_interface(preferred=None):
@@ -116,7 +139,7 @@ def pick_interface(preferred=None):
         return preferred
     found = wireless_interfaces()
     if not found:
-        raise NetToolError("no wireless interface found (looked in /sys/class/net/*/wireless)")
+        raise NetToolError("no wireless interface found on this machine")
     for name in found:
         if ifmod.describe(name)["up"]:
             return name
@@ -422,6 +445,11 @@ def parse_nmcli_scan(text):
 
 def scan(ifname=None, use_cache=False, passive_ok=True):
     """Scan for nearby BSSes. Returns (networks, source)."""
+    if IS_DARWIN:
+        from . import darwin
+
+        networks, source = darwin.wifi_scan()
+        return _rate_networks(networks), source
     ifname = pick_interface(ifname)
     if have_cmd("iw"):
         args = ["dev", ifname, "scan"]
@@ -497,7 +525,25 @@ def parse_iwlist_scan(text):
 
 
 def link(ifname=None):
-    """Current association state, merged from `iw link`, `iw station dump` and /proc."""
+    """Current association state.
+
+    Linux merges `iw link`, `iw station dump` and /proc/net/wireless; macOS uses
+    `wdutil info` when it can (root) and system_profiler otherwise.
+    """
+    if IS_DARWIN:
+        from . import darwin
+
+        state = darwin.wifi_link()
+        state.setdefault("interface", "")
+        if not state.get("interface"):
+            radios = darwin.wireless_interfaces()
+            state["interface"] = ifname or (radios[0] if radios else "")
+        signal = state.get("signal_dbm")
+        state["rating"] = signal_rating(signal)
+        state["quality_pct"] = quality_percent(signal)
+        if state.get("freq") is None and state.get("channel") and state.get("band"):
+            state["freq"] = channel_to_freq(state["channel"], state["band"]) or None
+        return state
     ifname = pick_interface(ifname)
     info = {"interface": ifname, "connected": False}
     if have_cmd("iw"):
@@ -536,6 +582,11 @@ def link(ifname=None):
 
 
 def survey_dump(ifname=None):
+    if IS_DARWIN:
+        raise NetToolError(
+            "macOS exposes no per-channel airtime survey (there is no `iw survey` "
+            "equivalent), so busy/interference percentages are unavailable here. "
+            "Signal, SNR, channel load and the channel recommendation still work.")
     ifname = pick_interface(ifname)
     if not have_cmd("iw"):
         raise NetToolError("`iw` is required for a channel survey")

@@ -11,7 +11,7 @@ import time
 
 from . import iface as ifmod
 from . import oui
-from .capture import open_capture_socket, _recv_with_ts
+from .link import open_link
 from .pcap import PcapReader, PcapWriter, LINKTYPE_ETHERNET
 from .util import NetToolError, mac_str
 
@@ -304,37 +304,32 @@ def listen(ifname=None, timeout=65, stop_after=0, save_pcap=None, on_neighbor=No
     ifname = ifname or ifmod.primary_interface()
     if not ifname:
         raise NetToolError("no interface to listen on; pass -i <iface>")
-    sock = open_capture_socket(ifname, promisc=True, snaplen=2048)
+    link = open_link(ifname, promisc=True, snaplen=2048)
     writer = PcapWriter(save_pcap, LINKTYPE_ETHERNET, 2048) if save_pcap else None
     found = {}
     deadline = time.time() + timeout
     try:
         while time.time() < deadline:
-            try:
-                data, ts = _recv_with_ts(sock, 2048)
-            except socket.timeout:
-                continue
-            except OSError as exc:
-                raise NetToolError("listen failed: %s" % exc)
-            dst = mac_str(data[0:6]) if len(data) >= 6 else ""
-            if dst not in LLDP_MULTICAST and dst != CDP_MULTICAST:
-                continue
-            n = parse_frame(data)
-            if not n:
-                continue
-            n["seen_at"] = ts
-            n["interface"] = ifname
-            key = neighbor_key(n)
-            fresh = key not in found
-            found[key] = n
-            if writer:
-                writer.write(data, ts)
-            if fresh and on_neighbor:
-                on_neighbor(n)
+            for data, ts in link.read(timeout=0.5):
+                dst = mac_str(data[0:6]) if len(data) >= 6 else ""
+                if dst not in LLDP_MULTICAST and dst != CDP_MULTICAST:
+                    continue
+                n = parse_frame(data)
+                if not n:
+                    continue
+                n["seen_at"] = ts
+                n["interface"] = ifname
+                key = neighbor_key(n)
+                fresh = key not in found
+                found[key] = n
+                if writer:
+                    writer.write(data, ts)
+                if fresh and on_neighbor:
+                    on_neighbor(n)
             if stop_after and len(found) >= stop_after:
                 break
     finally:
-        sock.close()
+        link.close()
         if writer:
             writer.close()
     return list(found.values())

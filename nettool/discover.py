@@ -9,11 +9,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import iface as ifmod
 from . import oui
-from .capture import ETH_P_ALL
+from .link import open_link
 from .ping import ping
 from .portscan import tcp_ping
-from .util import (NetToolError, is_root, mac_bytes, mac_str, reverse_dns,
-                   require_linux, require_root)
+from .util import NetToolError, is_root, mac_bytes, mac_str, reverse_dns
 
 ETH_P_ARP = 0x0806
 BROADCAST = b"\xff" * 6
@@ -33,8 +32,6 @@ def arp_sweep(ifname=None, cidr=None, timeout=3.0, rate=600.0, on_host=None):
 
     rate: requests per second (throttled so cheap switches don't drop the burst).
     """
-    require_linux("ARP sweep")
-    require_root("ARP sweep")
     ifname = ifname or ifmod.primary_interface()
     if not ifname:
         raise NetToolError("no interface found; pass -i <iface>")
@@ -52,9 +49,7 @@ def arp_sweep(ifname=None, cidr=None, timeout=3.0, rate=600.0, on_host=None):
     src_mac = mac_bytes(info["mac"])
     src_ip = info["ipv4"]
 
-    sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_ALL))
-    sock.bind((ifname, 0))
-    sock.settimeout(0.2)
+    link = open_link(ifname, promisc=False, snaplen=2048)
     found = {}
     targets = [str(h) for h in network.hosts()] if network.prefixlen < 31 \
         else [str(h) for h in network]
@@ -62,41 +57,39 @@ def arp_sweep(ifname=None, cidr=None, timeout=3.0, rate=600.0, on_host=None):
 
     def drain(deadline):
         while time.time() < deadline:
-            try:
-                data = sock.recv(2048)
-            except socket.timeout:
-                return
-            except OSError:
-                return
-            if len(data) < 42:
+            batch = link.read(timeout=max(0.01, min(0.2, deadline - time.time())))
+            if not batch:
                 continue
-            if struct.unpack("!H", data[12:14])[0] != ETH_P_ARP:
-                continue
-            if struct.unpack("!H", data[20:22])[0] != 2:      # replies only
-                continue
-            sha = mac_str(data[22:28])
-            spa = socket.inet_ntoa(data[28:32])
-            if spa in found:
-                continue
-            entry = {"ip": spa, "mac": sha, "vendor": oui.lookup(sha),
-                     "method": "arp", "iface": ifname}
-            found[spa] = entry
-            if on_host:
-                on_host(entry)
+            for data, _ts in batch:
+                if len(data) < 42:
+                    continue
+                if struct.unpack("!H", data[12:14])[0] != ETH_P_ARP:
+                    continue
+                if struct.unpack("!H", data[20:22])[0] != 2:      # replies only
+                    continue
+                sha = mac_str(data[22:28])
+                spa = socket.inet_ntoa(data[28:32])
+                if spa in found:
+                    continue
+                entry = {"ip": spa, "mac": sha, "vendor": oui.lookup(sha),
+                         "method": "arp", "iface": ifname}
+                found[spa] = entry
+                if on_host:
+                    on_host(entry)
 
     try:
         for target in targets:
             if target == src_ip:
                 continue
             try:
-                sock.send(_arp_request(src_mac, src_ip, target))
+                link.write(_arp_request(src_mac, src_ip, target))
             except OSError as exc:
                 raise NetToolError("ARP send failed on %s: %s" % (ifname, exc))
             if delay:
                 drain(time.time() + delay)
         drain(time.time() + timeout)
     finally:
-        sock.close()
+        link.close()
     return sorted(found.values(), key=lambda h: tuple(int(o) for o in h["ip"].split(".")))
 
 

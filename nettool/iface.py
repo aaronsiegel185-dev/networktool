@@ -1,11 +1,19 @@
-"""Interface, address, route, ARP and DNS inventory (pure /proc + ioctl, no iproute2)."""
+"""Interface, address, route, ARP and DNS inventory.
+
+Linux reads /proc, /sys and ioctls directly; macOS gets the same shapes from the BSD
+userland tools in `nettool.darwin`. Both return identical dictionaries so every other
+module is platform agnostic.
+"""
 
 import fcntl
 import os
 import socket
 import struct
+import sys
 
 from .util import NetToolError, mac_str
+
+IS_DARWIN = sys.platform == "darwin"
 
 SIOCGIFADDR = 0x8915
 SIOCGIFBRDADDR = 0x8919
@@ -38,14 +46,22 @@ def _read(path, default=""):
 
 
 def list_names():
+    if IS_DARWIN:
+        from . import darwin
+
+        return sorted(darwin.interfaces())
     try:
         names = sorted(os.listdir(SYS_NET))
     except OSError:
-        raise NetToolError("cannot read %s - is this Linux?" % SYS_NET)
+        raise NetToolError("cannot read %s - this platform is not supported" % SYS_NET)
     return names
 
 
 def is_wireless(name):
+    if IS_DARWIN:
+        from . import darwin
+
+        return darwin.is_wireless(name)
     return os.path.exists(os.path.join(SYS_NET, name, "wireless")) or os.path.exists(
         os.path.join(SYS_NET, name, "phy80211")
     )
@@ -141,7 +157,39 @@ def counters(name):
     return {k: int(_read(os.path.join(base, k), "0") or 0) for k in keys}
 
 
+def _from_darwin(record):
+    """Normalise a nettool.darwin interface record into the shape describe() returns."""
+    return {
+        "name": record["name"],
+        "index": record.get("index", 0),
+        "mac": record.get("mac", ""),
+        "ipv4": record.get("ipv4", ""),
+        "netmask": record.get("netmask", ""),
+        "prefixlen": record.get("prefixlen", 0),
+        "broadcast": record.get("broadcast", ""),
+        "ipv6": record.get("ipv6", []),
+        "mtu": record.get("mtu", 0),
+        "operstate": record.get("operstate", "unknown"),
+        "carrier": record.get("carrier", ""),
+        "speed_mbps": record.get("speed_mbps"),
+        "duplex": record.get("duplex", ""),
+        "wireless": record.get("wireless", False),
+        "up": record.get("up", False),
+        "running": record.get("running", False),
+        "loopback": record.get("loopback", False),
+        "promisc": record.get("promisc", False),
+        "counters": record.get("counters", {}),
+    }
+
+
 def describe(name):
+    if IS_DARWIN:
+        from . import darwin
+
+        records = darwin.interfaces()
+        if name not in records:
+            raise NetToolError("no such interface: %s" % name)
+        return _from_darwin(records[name])
     addr, mask, prefix, bcast = ipv4_info(name)
     fl = flags(name)
     speed = _read(os.path.join(SYS_NET, name, "speed"))
@@ -171,6 +219,15 @@ def describe(name):
 
 def inventory(include_down=True):
     out = []
+    if IS_DARWIN:
+        from . import darwin
+
+        for name, record in sorted(darwin.interfaces().items()):
+            info = _from_darwin(record)
+            if not include_down and not info["up"]:
+                continue
+            out.append(info)
+        return out
     for name in list_names():
         info = describe(name)
         if not include_down and not info["up"]:
@@ -180,7 +237,11 @@ def inventory(include_down=True):
 
 
 def routes():
-    """Parse /proc/net/route -> list of dicts (IPv4)."""
+    """IPv4 routing table (from /proc/net/route, or netstat -rn on macOS)."""
+    if IS_DARWIN:
+        from . import darwin
+
+        return darwin.routes()
     out = []
     lines = _read("/proc/net/route").splitlines()
     for line in lines[1:]:
@@ -226,6 +287,10 @@ def primary_interface():
 
 
 def arp_table():
+    if IS_DARWIN:
+        from . import darwin
+
+        return darwin.arp_table()
     out = []
     for line in _read("/proc/net/arp").splitlines()[1:]:
         f = line.split()
@@ -239,6 +304,12 @@ def arp_table():
 
 
 def dns_servers():
+    if IS_DARWIN:
+        from . import darwin
+
+        servers, search = darwin.dns_servers()
+        if servers:
+            return servers, search
     servers, search = [], []
     for path in ("/etc/resolv.conf", "/run/systemd/resolve/resolv.conf"):
         text = _read(path)

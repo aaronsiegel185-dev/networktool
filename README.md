@@ -15,6 +15,8 @@ questions you actually have when a network is misbehaving:
   gateway, DNS, internet reachability, path MTU and Wi-Fi in one pass.
 
 Everything is Python 3.8+ standard library. No pip dependencies, no libpcap, no scapy.
+Runs on **Linux and macOS** - the platform-specific layer is isolated, so the protocol
+work (pcap, LLDP/CDP, filters, interference scoring) is shared.
 
 There is also a **desktop GUI** in [`gui/`](gui/README.md) (Rust + egui) that drives this
 same CLI and renders the results - signal bars, channel congestion charts, live packet
@@ -31,21 +33,57 @@ python3 -m nettool --help          # run straight from the checkout
 pip install .                      # or install the `nettool` command
 ```
 
+On macOS the system Python that ships with the Xcode command line tools is enough
+(`xcode-select --install` if you have not run it before).
+
 ### Permissions
 
-Raw sockets need privileges. Either run under `sudo`, or grant the capabilities once:
+Raw packet access needs privileges.
+
+**Linux** - run under `sudo`, or grant the capabilities once:
 
 ```bash
 sudo setcap cap_net_raw,cap_net_admin=eip "$(readlink -f "$(which python3)")"
 ```
 
-| Feature | Needs root / CAP_NET_RAW |
+**macOS** - packet access goes through `/dev/bpf*`. Run under `sudo`, or install the
+BPF access helper once (the same approach Wireshark uses) and capture as yourself:
+
+```bash
+sudo ./gui/macos/install-bpf-access.sh     # then log out and back in
+```
+
+| Feature | Needs root / CAP_NET_RAW / BPF access |
 |---|---|
 | `iface`, `scan`, `pcap` | no |
 | `discover` (ARP sweep) | yes — falls back to TCP sweep without it |
 | `lldp`, `capture` | yes |
-| `ping`, `trace`, `mtu` | usually — works unprivileged if `net.ipv4.ping_group_range` allows it |
-| `wifi scan/survey` | needs the `iw` tool; scanning normally requires root |
+| `ping`, `trace`, `mtu` | usually — unprivileged ICMP sockets work on macOS, and on Linux if `net.ipv4.ping_group_range` allows it |
+| `wifi scan/link` | Linux needs `iw`; macOS uses `system_profiler`, and `wdutil` (root) for the BSSID |
+
+### Platform support
+
+| Command | Linux | macOS | How macOS does it |
+|---|---|---|---|
+| `iface`, routes, ARP, DNS | yes | yes | `ifconfig`, `netstat -rn/-ibn`, `arp -an`, `scutil --dns` |
+| `discover` (ARP / ICMP / TCP) | yes | yes | BPF device for the ARP sweep |
+| `scan` (TCP/UDP) | yes | yes | plain sockets |
+| `capture`, pcap export | yes | yes | `/dev/bpf*` instead of `AF_PACKET` |
+| `lldp` / `cdp` | yes | yes | same BPF path |
+| `ping`, `trace` | yes | yes | ICMP sockets |
+| `mtu` | yes | yes | `IP_DONTFRAG` instead of `IP_MTU_DISCOVER` |
+| `wifi scan` / `link` / `analyze` | yes | yes | `system_profiler SPAirPortDataType`, `wdutil info` |
+| `wifi survey` (airtime %) | yes | **no** | macOS exposes no `iw survey` equivalent |
+| `wifi` retry / failure counters | yes | **no** | not exposed outside the driver |
+
+Two macOS-specific caveats worth knowing:
+
+* **Network names are gated behind Location Services.** Without that permission macOS
+  redacts the SSID and BSSID; signal, noise, channel, security and the whole
+  interference analysis still work. `wdutil info` also needs root to show them.
+* **No airtime survey.** The "60% of airtime is undecodable" line that Linux gets from
+  `iw survey` has no macOS equivalent, so the interference verdict there is based on
+  neighbour count, overlap, signal and SNR.
 
 ## Commands
 
@@ -240,10 +278,19 @@ A tabbed desktop app over the same commands: health check, host discovery, port 
 LLDP/CDP neighbour cards, live capture with pcap export, and the Wi-Fi analysis with
 per-channel congestion charts and a live signal monitor. See [gui/README.md](gui/README.md).
 
+**A double-clickable macOS app:**
+
+```bash
+./gui/macos/build-app.sh               # or --universal for Intel + Apple Silicon
+open gui/target/macos/nettool.app      # then drag it to /Applications
+```
+
+The bundle carries the CLI inside `Contents/Resources`, so the app is self-contained.
+
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -v     # CLI: 59 tests
+python3 -m unittest discover -s tests -v     # CLI: 88 tests
 cd gui && cargo test                         # GUI: 31 tests
 ```
 
@@ -253,10 +300,14 @@ parsing, the Wi-Fi interference analysis, target/port expansion and the CLI comm
 
 ## Scope and limitations
 
-* Linux only. Capture, ARP sweep and LLDP use `AF_PACKET`; interface data comes from
-  `/sys/class/net`, `/proc/net/*` and ioctls.
-* Wi-Fi scanning shells out to `iw` (preferred), `nmcli` or `iwlist`. Without one of those
-  installed, only `/proc/net/wireless` data is available.
+* Linux and macOS. Windows is not supported: capture would need Npcap and the whole
+  inventory layer would need rewriting.
+* The macOS back end is written against the documented BSD interfaces and its parsers are
+  covered by tests, but it has had less time on real hardware than the Linux one - report
+  anything that misreads.
+* Wi-Fi scanning shells out to `iw` (preferred), `nmcli` or `iwlist` on Linux, and to
+  `system_profiler` / `wdutil` on macOS. See the platform table above for what each
+  platform can and cannot report.
 * Capture filtering happens in userspace after decoding rather than as kernel BPF, so a
   very high packet rate can drop frames — the kernel drop count is reported at the end.
 * Scanning and capturing networks you do not own or administer may be illegal. Use this
