@@ -21,12 +21,32 @@ def is_root():
 
 
 IS_DARWIN = sys.platform == "darwin"
+IS_WINDOWS = sys.platform == "win32"
+
+
+def is_elevated():
+    """Root on Unix, Administrator on Windows."""
+    if IS_WINDOWS:
+        try:
+            import ctypes
+
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:
+            return False
+    return is_root()
 
 
 def require_root(what):
     """Raise a NetToolError naming the fix for *this* platform."""
-    if is_root():
+    if is_elevated():
         return
+    if IS_WINDOWS:
+        raise NetToolError(
+            "%s needs Administrator on Windows. Right-click nettool and choose "
+            "\"Run as administrator\", or start an elevated PowerShell and run it "
+            "there. Capture also needs the Npcap driver - see https://npcap.com."
+            % what
+        )
     if IS_DARWIN:
         raise NetToolError(
             "%s needs access to /dev/bpf*. Either re-run with sudo, or install the "

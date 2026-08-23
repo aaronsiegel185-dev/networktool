@@ -1,0 +1,73 @@
+# Builds the Windows installer, and proves the Windows code paths compile.
+#
+# Nothing in this repository can be built for Windows on the machines it is
+# developed on, so this workflow is the only thing standing between the Windows
+# support and silent rot. It runs on every push and uploads the installer, so a
+# working setup.exe exists without anyone needing a Windows machine.
+name: Windows installer
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version from Cargo.toml
+        id: version
+        shell: pwsh
+        run: |
+          $cargo = Get-Content gui/Cargo.toml -Raw
+          $version = if ($cargo -match '(?m)^version\s*=\s*"([^"]+)"') { $Matches[1] } else { '0.1.0' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gui
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The point of the whole workflow: these paths cannot be compiled or run
+      # anywhere else, so a failure here is a real one rather than a flake.
+      - name: Python tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Rust tests
+        working-directory: gui
+        run: cargo test
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build the installer
+        shell: pwsh
+        run: gui\windows\build-installer.ps1 -Version ${{ steps.version.outputs.version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nettool-${{ steps.version.outputs.version }}-setup
+          path: dist/nettool-*-setup.exe
+          if-no-files-found: error
+
+      # A release gets the installer attached to it, so "download nettool for
+      # Windows" is a link rather than a build.
+      - name: Attach the installer to the release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/nettool-*-setup.exe

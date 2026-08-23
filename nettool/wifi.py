@@ -14,6 +14,7 @@ from . import oui
 from .util import NetToolError, have_cmd, run_cmd
 
 IS_DARWIN = sys.platform == "darwin"
+IS_WINDOWS = sys.platform == "win32"
 
 # macOS hands "<redacted>" to a process that has not been granted Location
 # Services, so a blank name here is a permission story, not a hidden SSID.
@@ -120,6 +121,10 @@ def signal_weight(dbm):
 
 
 def wireless_interfaces():
+    if IS_WINDOWS:
+        from . import windows
+
+        return windows.wireless_interfaces()
     if IS_DARWIN:
         from . import darwin
 
@@ -461,6 +466,11 @@ def scan(ifname=None, use_cache=False, passive_ok=True):
 
         networks, source = darwin.wifi_scan()
         return _rate_networks(networks), source
+    if IS_WINDOWS:
+        from . import windows
+
+        networks, source = windows.wifi_scan(refresh=not use_cache)
+        return _rate_networks(networks), source
     ifname = pick_interface(ifname)
     if have_cmd("iw"):
         args = ["dev", ifname, "scan"]
@@ -559,6 +569,14 @@ def link(ifname=None):
     Linux merges `iw link`, `iw station dump` and /proc/net/wireless; macOS uses
     `wdutil info` when it can (root) and system_profiler otherwise.
     """
+    if IS_WINDOWS:
+        from . import windows
+
+        state = windows.wifi_link(ifname)
+        state["rating"] = signal_rating(state.get("signal_dbm"))
+        if state.get("channel") and state.get("band"):
+            state["freq"] = channel_to_freq(state["channel"], state["band"]) or None
+        return _name_the_ap(state)
     if IS_DARWIN:
         from . import darwin
 
@@ -611,6 +629,12 @@ def link(ifname=None):
 
 
 def survey_dump(ifname=None):
+    if IS_WINDOWS:
+        raise NetToolError(
+            "Windows exposes no per-channel airtime survey (netsh reports signal "
+            "and channel, not busy time), so busy/interference percentages are "
+            "unavailable here. Signal, SNR, channel load and the channel "
+            "recommendation still work.")
     if IS_DARWIN:
         raise NetToolError(
             "macOS exposes no per-channel airtime survey (there is no `iw survey` "

@@ -11,6 +11,7 @@ import time
 from .util import NetToolError, reverse_dns
 
 IS_DARWIN = sys.platform == "darwin"
+IS_WINDOWS = sys.platform == "win32"
 
 ICMP_ECHO = 8
 ICMP_ECHOREPLY = 0
@@ -21,6 +22,7 @@ IP_PMTUDISC_DO = 2
 IP_MTU = 14
 IP_RECVERR = 11
 IP_DONTFRAG = 28              # macOS / BSD equivalent of PMTUDISC_DO
+IP_DONTFRAGMENT = 14          # Windows, from ws2ipdef.h
 
 
 def checksum(data):
@@ -48,6 +50,10 @@ def _open_icmp_socket():
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_ICMP)
         return sock, False
     except OSError:
+        if IS_WINDOWS:
+            raise NetToolError(
+                "ICMP on Windows needs a raw socket, which means Administrator. "
+                "Right-click nettool and choose \"Run as administrator\".")
         raise NetToolError(
             "ICMP needs either root/CAP_NET_RAW or unprivileged ping sockets "
             "(sysctl net.ipv4.ping_group_range)."
@@ -222,7 +228,9 @@ def path_mtu(host, low=576, high=9000, timeout=1.0):
     ident = (os.getpid() + 2) & 0xFFFF
     try:
         try:
-            if IS_DARWIN:
+            if IS_WINDOWS:
+                sock.setsockopt(socket.IPPROTO_IP, IP_DONTFRAGMENT, 1)
+            elif IS_DARWIN:
                 sock.setsockopt(socket.IPPROTO_IP, IP_DONTFRAG, 1)
             else:
                 sock.setsockopt(socket.IPPROTO_IP, IP_MTU_DISCOVER, IP_PMTUDISC_DO)

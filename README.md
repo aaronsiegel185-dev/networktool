@@ -1,7 +1,8 @@
 # nettool
 
-A single-file-install, dependency-free network diagnostics CLI for Linux. It answers the
-questions you actually have when a network is misbehaving:
+A single-file-install, dependency-free network diagnostics CLI for Linux, macOS and
+Windows, with a desktop GUI. It answers the questions you actually have when a
+network is misbehaving:
 
 * **What is on this LAN?** ARP/ICMP/TCP host discovery with MAC vendor lookup.
 * **What is this host running?** Threaded TCP connect scan and UDP probe scan with banner grabbing.
@@ -36,6 +37,47 @@ pip install .                      # or install the `nettool` command
 On macOS the system Python that ships with the Xcode command line tools is enough
 (`xcode-select --install` if you have not run it before).
 
+### Windows
+
+Run the installer from the releases page, or build it yourself:
+
+```powershell
+pwsh gui\windows\build-installer.ps1        # -> dist\nettool-<version>-setup.exe
+```
+
+The build needs [Rust](https://rustup.rs) and [Inno Setup 6]
+(https://jrsoftware.org/isdl.php) (`winget install JRSoftware.InnoSetup`), and
+uses PyInstaller to freeze the CLI if it is present, so the installed app does
+not depend on the user having Python. Without PyInstaller it falls back to
+shipping the Python source and requiring a system Python 3.8+, which is a fair
+bet on a development machine and a poor one on anyone else's.
+
+The installer does **not** bundle [Npcap](https://npcap.com). Npcap is a signed
+kernel driver under its own licence, and shipping someone else's driver inside an
+unsigned installer helps nobody - so setup detects whether it is present and
+offers to open the download page instead. Install it with *WinPcap
+API-compatible mode* ticked.
+
+What that means in practice:
+
+| On Windows | Needs |
+|---|---|
+| `iface`, `scan`, `ping`, `trace`, `mtu`, `pcap`, `analyze` | nothing |
+| `wifi` (scan, link, analyze, map) | nothing - `netsh wlan` reports every BSS |
+| `discover` | Administrator for the ARP sweep; falls back to a TCP sweep |
+| `capture`, `mirror`, `lldp` | Npcap **and** Administrator |
+
+Wi-Fi is the pleasant surprise here: `netsh wlan` gives SSID, BSSID, channel,
+band, radio type and per-BSS signal with no driver and no elevation, so the whole
+Wi-Fi tab works out of the box - more than macOS gives without a Location
+Services grant. There is no airtime survey (Windows reports signal, not busy
+time), so the interference verdict rests on neighbour count, overlap and signal,
+as it does on macOS.
+
+Signal there is a percentage rather than dBm; nettool converts it with
+Microsoft's documented mapping (0% = -100 dBm, 100% = -50 dBm), which lands on
+2 dB steps - accurate enough to rate a link, not to argue about.
+
 ### Permissions
 
 Raw packet access needs privileges.
@@ -52,6 +94,12 @@ BPF access helper once (the same approach Wireshark uses) and capture as yoursel
 ```bash
 sudo ./gui/macos/install-bpf-access.sh     # then log out and back in
 ```
+
+**Windows** - capture goes through the Npcap driver and needs Administrator.
+There is no `sudo`: elevation is decided when the process starts, so right-click
+nettool and choose *Run as administrator* (the Start menu group has a shortcut
+that says so). The GUI's "run via sudo" setting is ignored there for the same
+reason.
 
 | Feature | Needs root / CAP_NET_RAW / BPF access |
 |---|---|

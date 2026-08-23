@@ -35,10 +35,18 @@ impl Settings {
     /// the repository checkout next to this binary.
     pub fn detect() -> Self {
         let mut settings = Self::default();
+        // The Windows installer puts the frozen CLI beside the GUI, where PATH
+        // will not find it until the optional PATH entry is taken.
+        if let Some(sibling) = sibling_cli() {
+            if probe(&[sibling.clone()], None) {
+                settings.base = vec![sibling];
+                return settings;
+            }
+        }
         if probe(&["nettool".into()], None) {
             return settings;
         }
-        let python = vec!["python3".to_string(), "-m".to_string(), "nettool".to_string()];
+        let python = python_command();
         for dir in candidate_dirs() {
             if probe(&python, Some(&dir)) {
                 settings.base = python;
@@ -55,7 +63,9 @@ impl Settings {
     /// Full argv for a command, including any sudo prefix.
     pub fn argv(&self, args: &[String]) -> Vec<String> {
         let mut argv: Vec<String> = Vec::new();
-        if self.use_sudo {
+        // Windows has no sudo: elevation is decided when the process starts, so
+        // prefixing anything here would only produce a command that fails.
+        if self.use_sudo && !cfg!(windows) {
             argv.push("sudo".to_string());
             argv.push("-n".to_string());
         }
@@ -70,6 +80,25 @@ impl Settings {
     }
 }
 
+/// `nettool.exe` next to this binary, as the Windows installer arranges.
+fn sibling_cli() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let name = if cfg!(windows) { "nettool.exe" } else { "nettool" };
+    let sibling = exe.parent()?.join(name);
+    if sibling.exists() {
+        Some(sibling.to_string_lossy().to_string())
+    } else {
+        None
+    }
+}
+
+/// Windows ships `python.exe`; python3 is a Unix convention (and, on Windows,
+/// often a Store stub that opens the Store rather than running anything).
+fn python_command() -> Vec<String> {
+    let interpreter = if cfg!(windows) { "python" } else { "python3" };
+    vec![interpreter.to_string(), "-m".to_string(), "nettool".to_string()]
+}
+
 fn candidate_dirs() -> Vec<String> {
     let mut dirs = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
@@ -78,6 +107,13 @@ fn candidate_dirs() -> Vec<String> {
             let resources = macos_dir.join("../Resources");
             if resources.join("nettool").join("cli.py").exists() {
                 dirs.push(resources.to_string_lossy().to_string());
+            }
+        }
+        // The Windows installer: nettool-gui.exe and a nettool\ package folder
+        // sit in the same directory.
+        if let Some(dir) = exe.parent() {
+            if dir.join("nettool").join("cli.py").exists() {
+                dirs.push(dir.to_string_lossy().to_string());
             }
         }
         // target/{debug,release}/nettool-gui -> repo root is three levels up.
@@ -104,12 +140,31 @@ fn candidate_dirs() -> Vec<String> {
     dirs
 }
 
+/// Keep a console process from flashing a window on Windows.
+///
+/// The GUI shells out for every reading it takes, and each of those is a console
+/// program - without this, using the app means a black window blinking open and
+/// shut several times a second.
+fn hide_console(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
+}
+
 fn probe(base: &[String], dir: Option<&str>) -> bool {
     let mut cmd = Command::new(&base[0]);
     cmd.args(&base[1..])
         .arg("--version")
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    hide_console(&mut cmd);
     if let Some(dir) = dir {
         cmd.current_dir(dir);
     }
@@ -199,6 +254,7 @@ impl Job {
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
                     .stdin(Stdio::null());
+                hide_console(&mut command);
                 if let Some(dir) = &working_dir {
                     command.current_dir(dir);
                 }
@@ -383,7 +439,17 @@ pub fn running_as_root() -> bool {
         {
             unsafe { libc::geteuid() == 0 }
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        {
+            // Windows has no euid; the equivalent question is whether the
+            // process holds an elevated token, which is what capture needs.
+            #[link(name = "shell32")]
+            extern "system" {
+                fn IsUserAnAdmin() -> i32;
+            }
+            unsafe { IsUserAnAdmin() != 0 }
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             false
         }

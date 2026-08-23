@@ -14,6 +14,7 @@ import sys
 from .util import NetToolError, mac_str
 
 IS_DARWIN = sys.platform == "darwin"
+IS_WINDOWS = sys.platform == "win32"
 
 SIOCGIFADDR = 0x8915
 SIOCGIFBRDADDR = 0x8919
@@ -46,6 +47,10 @@ def _read(path, default=""):
 
 
 def list_names():
+    if IS_WINDOWS:
+        from . import windows
+
+        return sorted(windows.interfaces())
     if IS_DARWIN:
         from . import darwin
 
@@ -58,6 +63,10 @@ def list_names():
 
 
 def is_wireless(name):
+    if IS_WINDOWS:
+        from . import windows
+
+        return windows.is_wireless(name)
     if IS_DARWIN:
         from . import darwin
 
@@ -157,8 +166,8 @@ def counters(name):
     return {k: int(_read(os.path.join(base, k), "0") or 0) for k in keys}
 
 
-def _from_darwin(record):
-    """Normalise a nettool.darwin interface record into the shape describe() returns."""
+def _from_record(record):
+    """Normalise a platform interface record into the shape describe() returns."""
     return {
         "name": record["name"],
         "index": record.get("index", 0),
@@ -183,13 +192,20 @@ def _from_darwin(record):
 
 
 def describe(name):
+    if IS_WINDOWS:
+        from . import windows
+
+        records = windows.interfaces()
+        if name not in records:
+            raise NetToolError("no such interface: %s" % name)
+        return _from_record(records[name])
     if IS_DARWIN:
         from . import darwin
 
         records = darwin.interfaces()
         if name not in records:
             raise NetToolError("no such interface: %s" % name)
-        return _from_darwin(records[name])
+        return _from_record(records[name])
     addr, mask, prefix, bcast = ipv4_info(name)
     fl = flags(name)
     speed = _read(os.path.join(SYS_NET, name, "speed"))
@@ -219,11 +235,20 @@ def describe(name):
 
 def inventory(include_down=True):
     out = []
+    if IS_WINDOWS:
+        from . import windows
+
+        for name, record in sorted(windows.interfaces().items()):
+            info = _from_record(record)
+            if not include_down and not info["up"]:
+                continue
+            out.append(info)
+        return out
     if IS_DARWIN:
         from . import darwin
 
         for name, record in sorted(darwin.interfaces().items()):
-            info = _from_darwin(record)
+            info = _from_record(record)
             if not include_down and not info["up"]:
                 continue
             out.append(info)
@@ -238,6 +263,10 @@ def inventory(include_down=True):
 
 def routes():
     """IPv4 routing table (from /proc/net/route, or netstat -rn on macOS)."""
+    if IS_WINDOWS:
+        from . import windows
+
+        return windows.routes()
     if IS_DARWIN:
         from . import darwin
 
@@ -287,6 +316,10 @@ def primary_interface():
 
 
 def arp_table():
+    if IS_WINDOWS:
+        from . import windows
+
+        return windows.arp_table()
     if IS_DARWIN:
         from . import darwin
 
@@ -304,6 +337,10 @@ def arp_table():
 
 
 def dns_servers():
+    if IS_WINDOWS:
+        from . import windows
+
+        return windows.dns_servers()
     if IS_DARWIN:
         from . import darwin
 

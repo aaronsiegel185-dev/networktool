@@ -2,6 +2,11 @@
 //!
 //! The GUI never re-implements the diagnostics: it runs `nettool ... --json` on worker
 //! threads and renders the results, so both interfaces always agree.
+// A release build must not open a console window behind the GUI on Windows.
+// Debug builds keep one, because --screenshot and the other CLI flags print
+// there and losing that output would make the app harder to work on.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 
 use eframe::egui;
 use nettool_gui::app::Startup;

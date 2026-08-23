@@ -26,6 +26,7 @@ from .util import NetToolError, require_root
 
 IS_LINUX = sys.platform.startswith("linux")
 IS_DARWIN = sys.platform == "darwin"
+IS_WINDOWS = sys.platform == "win32"
 
 ETH_P_ALL = 0x0003
 DLT_EN10MB = 1
@@ -187,6 +188,13 @@ def capturable_interfaces(names=None):
     This is `tcpdump -D` in miniature: the only reliable way to know is to try, since
     plenty of interfaces show up in ifconfig but have no BPF device behind them.
     """
+    if IS_WINDOWS:
+        from . import npcap
+
+        try:
+            return [description or device for device, description in npcap.devices()]
+        except NetToolError:
+            return []
     if not IS_DARWIN and not IS_LINUX:
         return []
     from . import iface as ifmod
@@ -553,6 +561,20 @@ def open_link(ifname, promisc=True, snaplen=65535, buffer_size=None, monitor=Fal
     (`sudo iw dev wlan0 interface add mon0 type monitor && sudo ip link set mon0 up`)
     and capture on that.
     """
+    if IS_WINDOWS:
+        # Windows has no raw layer-2 socket; capture goes through the Npcap
+        # driver, which presents the same read/filter/stats surface as the
+        # sockets above so nothing further up has to know the difference.
+        from . import npcap
+
+        require_root("Packet capture")
+        if monitor:
+            raise NetToolError(
+                "monitor mode on Windows needs an adapter and driver that support it; "
+                "Npcap can enable it per-adapter through its own settings, but nettool "
+                "cannot switch it on for you.")
+        sock = npcap.NpcapSocket(ifname, promisc=promisc, snaplen=snaplen)
+        return sock
     if not (IS_LINUX or IS_DARWIN or "bsd" in sys.platform):
         raise NetToolError("raw packet capture is not implemented on %s" % sys.platform)
     if IS_LINUX:
