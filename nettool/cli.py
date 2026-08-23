@@ -7,6 +7,7 @@ import sys
 import time
 
 from . import __version__
+from . import analyze as analyzemod
 from . import capture as capmod
 from . import diag as diagmod
 from . import dot11
@@ -314,6 +315,137 @@ def widgets_secs(seconds):
     if seconds < 60:
         return "%.1f s" % seconds
     return "%dm %02ds" % (int(seconds) // 60, int(seconds) % 60)
+
+
+# --- analyze ---------------------------------------------------------------
+
+CONVERSATION_KINDS = ["tcp", "udp", "ip", "ipv6", "ethernet"]
+
+
+def _sparkline(values):
+    """A one-line throughput graph, so the shape of the traffic is visible in a terminal."""
+    if not values:
+        return ""
+    blocks = " .:-=+*#%@"
+    peak = max(values) or 1
+    return "".join(blocks[min(len(blocks) - 1, int(value * (len(blocks) - 1) / peak))]
+                   for value in values)
+
+
+def render_analysis(report, top=20, kinds=None, sink=None):
+    sink = sink or sys.stdout
+    section("capture")
+    table([["packets", report["packets"]],
+           ["bytes", human_bytes(report["bytes"])],
+           ["duration", widgets_secs(report["duration"])],
+           ["average rate", "%s/s" % human_bytes(
+               report["bytes"] / report["duration"]) if report["duration"] else "-"]],
+          ["field", "value"], sink)
+
+    section("protocol hierarchy")
+    table([[entry["layers"], entry["packets"], "%.1f%%" % entry["packets_pct"],
+            human_bytes(entry["bytes"]), "%.1f%%" % entry["bytes_pct"]]
+           for entry in report["hierarchy"][:15]],
+          ["layers", "packets", "of packets", "bytes", "of bytes"], sink)
+
+    for kind in (kinds or ["tcp", "udp", "ip"]):
+        conversations = report["conversations"].get(kind) or []
+        if not conversations:
+            continue
+        section("%s conversations" % kind.upper())
+        table([[conversation["a"], conversation["b"],
+                conversation["packets_ab"], human_bytes(conversation["bytes_ab"]),
+                conversation["packets_ba"], human_bytes(conversation["bytes_ba"]),
+                human_bytes(conversation["bytes"]),
+                "%.2fs" % conversation["duration"],
+                "%.0f" % conversation["bps_ab"], "%.0f" % conversation["bps_ba"]]
+               for conversation in conversations[:top]],
+              ["address A", "address B", "A->B", "bytes A->B", "B->A", "bytes B->A",
+               "total", "duration", "bps A->B", "bps B->A"], sink)
+
+    section("endpoints")
+    table([[endpoint["address"], endpoint["packets"], human_bytes(endpoint["bytes"]),
+            endpoint["packets_tx"], human_bytes(endpoint["bytes_tx"]),
+            endpoint["packets_rx"], human_bytes(endpoint["bytes_rx"]),
+            endpoint["peers"],
+            ",".join(str(port) for port in endpoint["top_ports"])]
+           for endpoint in report["endpoints"][:top]],
+          ["address", "packets", "bytes", "tx", "bytes tx", "rx", "bytes rx", "peers",
+           "ports"], sink)
+
+    tcp = report["tcp"]
+    if tcp["segments"]:
+        section("tcp health")
+        table([["segments / flows", "%d / %d" % (tcp["segments"], tcp["flows"])],
+               ["completed handshakes", "%d of %d SYNs"
+                % (tcp["completed_handshakes"], tcp["syns"])],
+               ["handshake time", "avg %s ms, max %s ms"
+                % (tcp["handshake_ms_avg"], tcp["handshake_ms_max"])],
+               ["retransmissions", "%d (%.2f%%)"
+                % (tcp["retransmissions"], tcp["retransmission_pct"])],
+               ["out of order", tcp["out_of_order"]],
+               ["duplicate acks", tcp["duplicate_acks"]],
+               ["zero window", tcp["zero_window"]],
+               ["resets", tcp["resets"]]],
+              ["field", "value"], sink)
+
+    dns = report["dns"]
+    if dns["queries"]:
+        section("dns")
+        table([["queries", dns["queries"]],
+               ["answered / unanswered", "%d / %d" % (dns["answered"], dns["unanswered"])],
+               ["response time", "avg %s ms, max %s ms"
+                % (dns["latency_ms_avg"], dns["latency_ms_max"])],
+               ["slowest", ", ".join("%s (%.0f ms)" % (entry["name"], entry["ms"])
+                                     for entry in dns["slowest"][:3])],
+               ["failures", ", ".join(dns["failures"]) or "none"]],
+              ["field", "value"], sink)
+
+    if report["vlans"]:
+        section("vlans")
+        table([[vlan, count] for vlan, count in report["vlans"].items()],
+              ["vlan", "packets"], sink)
+
+    throughput = report["throughput"]
+    if len(throughput) > 2:
+        section("throughput over time")
+        rates = [entry["bps"] for entry in throughput]
+        sink.write("  %s\n" % _sparkline(rates))
+        end_label = "%.0fs" % throughput[-1]["t"]
+        padding = max(1, len(rates) - 2 - len(end_label))
+        sink.write("  0s%s%s   peak %s/s\n" % (" " * padding, end_label,
+                                               human_bytes(max(rates) / 8)))
+
+    section("findings")
+    for level, message in report["findings"]:
+        sink.write("  %s %s\n" % (SEV_MARK.get(level, "[    ]"), message))
+
+
+def cmd_analyze(args):
+    if args.follow is not None:
+        conversation, chunks = analyzemod.follow_stream(
+            args.file, index=args.follow, kind=args.stream_kind)
+        if args.json:
+            _emit_json({
+                "conversation": conversation,
+                "bytes": sum(len(payload) for _direction, payload in chunks),
+                "stream": analyzemod.format_stream(chunks, as_hex=args.hex),
+            })
+            return 0
+        section("stream %d: %s <-> %s" % (args.follow, conversation["a"], conversation["b"]))
+        sys.stdout.write("-> is %s, <- is %s\n\n" % (conversation["a"], conversation["b"]))
+        sys.stdout.write(analyzemod.format_stream(chunks, as_hex=args.hex) + "\n")
+        return 0
+
+    analysis = analyzemod.analyze_pcap(args.file, filter_expr=args.filter,
+                                       bucket_seconds=args.bucket)
+    report = analysis.report(top=args.top)
+    if args.json:
+        _emit_json(report)
+        return 0
+    kinds = [args.conversations] if args.conversations else None
+    render_analysis(report, top=args.top, kinds=kinds)
+    return 0
 
 
 # --- mirror ----------------------------------------------------------------
@@ -769,6 +901,23 @@ def build_parser():
                    help="capture 802.11 frames off the air (macOS: switches the Wi-Fi "
                         "radio to monitor mode and drops the association)")
     p.set_defaults(func=cmd_capture)
+
+    p = add_json(sub.add_parser(
+        "analyze", help="Wireshark-style analysis of a capture: conversations, endpoints, "
+                        "protocol hierarchy, TCP health, DNS timing"))
+    p.add_argument("file")
+    p.add_argument("-f", "--filter", help="only analyse packets matching this filter")
+    p.add_argument("-n", "--top", type=int, default=20, help="rows per table (default 20)")
+    p.add_argument("-c", "--conversations", choices=CONVERSATION_KINDS,
+                   help="show only this conversation table")
+    p.add_argument("--bucket", type=float, default=1.0,
+                   help="seconds per throughput bucket (default 1)")
+    p.add_argument("--follow", type=int, metavar="N",
+                   help="reassemble conversation N (0 is the busiest) and print its payload")
+    p.add_argument("--stream-kind", choices=["tcp", "udp"], default="tcp",
+                   help="which conversation table --follow indexes into")
+    p.add_argument("--hex", action="store_true", help="hex dump the followed stream")
+    p.set_defaults(func=cmd_analyze)
 
     p = add_json(sub.add_parser(
         "mirror", help="capture from a switch port mirror (SPAN) and report per VLAN"))

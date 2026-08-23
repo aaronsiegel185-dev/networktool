@@ -209,6 +209,10 @@ def _decode_udp(pkt, data, off):
         hint = " (DHCP)"
     elif 53 in (sport, dport):
         hint = " (DNS)"
+        _decode_dns(pkt, data, off + 8)
+        if pkt.get("dns_name"):
+            hint = " (DNS %s %s)" % ("response" if pkt.get("dns_response") else "query",
+                                     pkt["dns_name"])
     elif 5353 in (sport, dport):
         hint = " (mDNS)"
     elif 1900 in (sport, dport):
@@ -219,6 +223,46 @@ def _decode_udp(pkt, data, off):
         hint = " (NetBIOS)"
     pkt["info"] = "%s:%d > %s:%d UDP len=%d%s" % (
         pkt["src"], sport, pkt["dst"], dport, pkt["payload_len"], hint)
+
+
+DNS_RCODES = {0: "ok", 1: "format-error", 2: "server-failure", 3: "name-error (NXDOMAIN)",
+              4: "not-implemented", 5: "refused"}
+DNS_TYPES = {1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 15: "MX", 16: "TXT",
+             28: "AAAA", 33: "SRV", 65: "HTTPS"}
+
+
+def _decode_dns(pkt, data, off):
+    """Just enough DNS to match a response to its query and see whether it failed."""
+    if len(data) < off + 12:
+        return
+    ident, flags, questions = struct.unpack("!HHH", data[off:off + 6])
+    pkt["dns_id"] = ident
+    pkt["dns_response"] = bool(flags & 0x8000)
+    pkt["dns_rcode"] = flags & 0x000F
+    pkt["dns_rcode_name"] = DNS_RCODES.get(flags & 0x000F, "rcode %d" % (flags & 0x000F))
+    if not questions:
+        return
+    labels = []
+    pos = off + 12
+    for _ in range(64):
+        if pos >= len(data):
+            return
+        length = data[pos]
+        if length == 0:
+            pos += 1
+            break
+        if length & 0xC0:                      # a compression pointer: stop here
+            pos += 2
+            break
+        label = data[pos + 1:pos + 1 + length]
+        if len(label) < length:
+            return
+        labels.append(label.decode("ascii", "replace"))
+        pos += 1 + length
+    pkt["dns_name"] = ".".join(labels)
+    if len(data) >= pos + 4:
+        qtype = struct.unpack("!H", data[pos:pos + 2])[0]
+        pkt["dns_type"] = DNS_TYPES.get(qtype, "type %d" % qtype)
 
 
 ICMP_TYPES = {0: "echo-reply", 3: "dest-unreachable", 5: "redirect", 8: "echo-request",

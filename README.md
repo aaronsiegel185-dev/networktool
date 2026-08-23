@@ -165,6 +165,48 @@ Decoded LLDP TLVs include chassis/port IDs, capabilities, management addresses,
 802.1 VLAN, 802.3 MAC/PHY, PoE (LLDP-MED and 802.3), link aggregation and max frame size.
 CDP adds platform, software version, VTP domain, native and voice VLAN, duplex and power draw.
 
+### Deep analysis of a capture
+
+`nettool analyze` gives you what Wireshark's Statistics menu does, from the command line
+and in JSON:
+
+```bash
+nettool analyze span.pcap                    # the full report
+nettool analyze span.pcap -c tcp -n 40       # just TCP conversations, 40 rows
+nettool analyze span.pcap -f "host 10.0.0.5" # analyse a subset
+nettool analyze span.pcap --follow 0         # reassemble the busiest conversation
+nettool analyze span.pcap --follow 0 --hex   # ...as a hex dump
+nettool analyze span.pcap --json             # everything, for scripts
+```
+
+It reports, in one streaming pass so large files are fine:
+
+* **Conversations** at every layer - Ethernet, IPv4/IPv6, TCP and UDP - counted separately
+  in each direction, with bytes, duration and bits per second per direction.
+* **Endpoints**: packets and bytes sent and received per address, how many peers each one
+  talked to, and the services it used.
+* **Protocol hierarchy**: `IPv4 > TCP`, `IPv4 > UDP > DNS` and so on, with each layer's
+  share of packets and bytes.
+* **TCP health**: retransmissions, out-of-order segments, duplicate ACKs, zero-window
+  advertisements, resets, handshake times, and connection attempts that got no SYN/ACK.
+* **DNS timing**: query/response latency, the slowest lookups, failures by name, and
+  queries that were never answered.
+* **Throughput over time**, as buckets (and a sparkline in the terminal).
+* **Findings** - the same expert-info idea, in plain language:
+
+```
+== findings ==
+  [FAIL] 10.2% of TCP segments are retransmissions - packet loss on the path.
+  [WARN] 1 zero-window advertisements - a receiver could not keep up with the sender.
+  [WARN] 1 connection attempt(s) got no SYN/ACK: 10.0.0.250:445
+  [WARN] DNS failures: typo.exampel: name-error (NXDOMAIN)
+  [FAIL] 10.0.0.77 is claimed by 2 MAC addresses (00:11:22:33:44:55, aa:bb:cc:dd:ee:ff)
+         - a duplicate IP.
+```
+
+`--follow` reassembles a conversation's payload in capture order, marking each direction,
+which is Wireshark's "Follow TCP Stream" without leaving the terminal.
+
 ### Switch port mirrors and VLAN capture
 
 Plug into a SPAN/mirror destination port and see every VLAN on it:
@@ -347,7 +389,7 @@ The bundle carries the CLI inside `Contents/Resources`, so the app is self-conta
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -v     # CLI: 162 tests
+python3 -m unittest discover -s tests -v     # CLI: 187 tests
 cd gui && cargo test                         # GUI: 34 tests
 ```
 
