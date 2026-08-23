@@ -44,6 +44,10 @@ def main(argv):
         return emit("lldp.json")
     if command == "pcap":
         return emit("pcap.json")
+    if command == "analyze":
+        if "--follow" in rest:
+            return emit("analyze_stream.json")
+        return emit("analyze.json")
     if command == "mirror":
         if "--plan" in rest:
             return emit("mirror_plan.json")

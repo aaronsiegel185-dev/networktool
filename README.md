@@ -374,8 +374,14 @@ cd gui && cargo run --release
 ```
 
 A tabbed desktop app over the same commands: health check, host discovery, port scanning,
-LLDP/CDP neighbour cards, live capture with pcap export, and the Wi-Fi analysis with
-per-channel congestion charts and a live signal monitor. See [gui/README.md](gui/README.md).
+LLDP/CDP neighbour cards, live capture with pcap export, mirror/VLAN capture, the
+Wireshark-style capture analysis (conversations, protocol hierarchy, TCP health, Follow
+Stream) and the Wi-Fi analysis with per-channel congestion charts and a live signal
+monitor. See [gui/README.md](gui/README.md).
+
+```bash
+nettool-gui --open span.pcap     # open a capture straight into the analysis tab
+```
 
 **A double-clickable macOS app:**
 
@@ -390,7 +396,7 @@ The bundle carries the CLI inside `Contents/Resources`, so the app is self-conta
 
 ```bash
 python3 -m unittest discover -s tests -v     # CLI: 187 tests
-cd gui && cargo test                         # GUI: 34 tests
+cd gui && cargo test                         # GUI: 37 tests
 ```
 
 The suite covers the packet decoder, pcap reader/writer round-trips, the filter language,

@@ -197,6 +197,7 @@ impl MirrorTab {
         settings: &Settings,
         inventory: &Option<IfaceReport>,
     ) -> Action {
+        let mut action = Action::None;
         let interfaces = inventory
             .as_ref()
             .map(|i| i.interfaces.as_slice())
@@ -379,13 +380,16 @@ impl MirrorTab {
                 ui.add_space(6.0);
                 ui.label(egui::RichText::new("files written").strong());
                 egui::Grid::new("mirror_files")
-                    .num_columns(3)
+                    .num_columns(4)
                     .spacing([14.0, 3.0])
                     .show(ui, |ui| {
                         for file in &report.files {
                             ui.monospace(&file.file);
                             ui.monospace(file.packets.to_string());
                             ui.monospace(fmt_bytes(file.bytes));
+                            if ui.small_button("analyse").clicked() {
+                                action = Action::AnalyzeFile(file.file.clone());
+                            }
                             ui.end_row();
                         }
                     });
@@ -498,7 +502,7 @@ impl MirrorTab {
             });
         }
         job_footer(ui, &self.plan_job, &self.plan_error);
-        Action::None
+        action
     }
 }
 

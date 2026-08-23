@@ -1,5 +1,6 @@
 //! Tab views. Each tab owns its inputs, its running job and its parsed result.
 
+pub mod analyze;
 pub mod capture;
 pub mod discover;
 pub mod mirror;
@@ -22,17 +23,19 @@ pub enum Tab {
     Lldp,
     Capture,
     Mirror,
+    Analyze,
     Wifi,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 7] = [
+    pub const ALL: [Tab; 8] = [
         Tab::Overview,
         Tab::Discover,
         Tab::Scan,
         Tab::Lldp,
         Tab::Capture,
         Tab::Mirror,
+        Tab::Analyze,
         Tab::Wifi,
     ];
 
@@ -44,6 +47,7 @@ impl Tab {
             Tab::Lldp => "LLDP / CDP",
             Tab::Capture => "Capture",
             Tab::Mirror => "Mirror / VLAN",
+            Tab::Analyze => "Analyse",
             Tab::Wifi => "Wi-Fi",
         }
     }
@@ -57,6 +61,8 @@ pub enum Action {
     ScanTarget(String),
     /// Refresh the shared interface inventory.
     RefreshInterfaces,
+    /// Open a capture file in the analysis tab.
+    AnalyzeFile(String),
 }
 
 /// Dropdown of interface names. `wireless_only` filters to Wi-Fi radios.

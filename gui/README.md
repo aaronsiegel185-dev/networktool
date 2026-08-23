@@ -48,7 +48,9 @@ command line.
 
 ```
 nettool-gui [options]
-  --tab <name>                  open on overview | discover | scan | lldp | capture | wifi
+  --tab <name>                  open on overview | discover | scan | lldp | capture | mirror | analyze | wifi
+  --open <file.pcap>            open a capture straight into the analysis tab
+  --analyze-view <name>         conversations | endpoints | protocols | tcp | dns | throughput
   --wifi-view <name>            wifi sub-view: analyze | networks | link | monitor
   --nettool <cmd>               how to run nettool, e.g. "python3 -m nettool"
   --sudo                        run nettool through `sudo -n`
@@ -83,9 +85,15 @@ at all. Signal, SNR, channel load and the channel recommendation work regardless
 | **Port scan** | TCP or UDP scanning with port presets, banner grabbing, and results grouped per host with colour-coded states. |
 | **LLDP / CDP** | Listens for switch announcements and renders each neighbour as a card: port, native and voice VLAN, PoE budget, management IP, duplex, max frame. Can also decode neighbours out of a saved pcap. |
 | **Capture** | Live packet view streaming from the running capture, writing a standard pcap, with the filter language and a Stop button. Below it, summarise any pcap file: protocol mix, top talkers, conversations. |
+| **Mirror / VLAN** | Capture from a switch SPAN port: per-VLAN inventory (hosts, MACs, broadcast share, protocols, DHCP servers), mirror health checks, one pcap per VLAN, and the switch commands that set the mirror up, with a copy button. |
+| **Analyse** | Conversations at every layer with per-direction byte counts, endpoints, protocol hierarchy with share bars, TCP health (retransmissions, resets, zero windows, handshake times), DNS timing, a throughput chart, and Follow-Stream. |
 | **Wi-Fi** | Four views — *Analyze* (per-channel congestion bar charts, recommended channel, airtime survey, findings), *Networks* (scan table with signal bars), *My link* (RSSI, SNR, bitrate, retries), *Monitor* (live signal chart with swing and roaming detection). |
 
 ![Wi-Fi analysis](docs/wifi-analyze.png)
+
+![Capture analysis](docs/analyze.png)
+
+![Mirror and VLAN capture](docs/mirror.png)
 
 ![LLDP neighbours](docs/lldp.png)
 
@@ -106,7 +114,7 @@ at all. Signal, SNR, channel load and the channel recommendation work regardless
 ## Tests
 
 ```bash
-cargo test          # 31 tests, no window required
+cargo test          # 37 tests, no window required
 cargo clippy --all-targets
 ```
 

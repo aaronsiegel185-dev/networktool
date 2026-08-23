@@ -6,7 +6,8 @@ use crate::model::IfaceReport;
 use crate::runner::{args, Job, Settings};
 use crate::ui::widgets;
 use crate::ui::{
-    capture::CaptureTab, discover::DiscoverTab, lldp::LldpTab, mirror::MirrorTab,
+    analyze::AnalyzeTab, analyze::View as AnalyzeView, capture::CaptureTab,
+    discover::DiscoverTab, lldp::LldpTab, mirror::MirrorTab,
     overview::OverviewTab, scan::ScanTab, wifi::View as WifiView, wifi::WifiTab, Action, Tab,
 };
 
@@ -19,6 +20,9 @@ pub struct Startup {
     pub autorun: bool,
     /// Save a PNG after this many seconds and exit (documentation / CI aid).
     pub screenshot: Option<(String, f32)>,
+    /// A capture file to preload into the analysis tab.
+    pub open_file: Option<String>,
+    pub analyze_view: Option<AnalyzeView>,
 }
 
 pub struct App {
@@ -35,6 +39,7 @@ pub struct App {
     lldp: LldpTab,
     capture: CaptureTab,
     mirror: MirrorTab,
+    analyze: AnalyzeTab,
     wifi: WifiTab,
     base_command: String,
     /// Dev/documentation aid: capture the window to a PNG after a few frames.
@@ -50,6 +55,13 @@ pub struct ScreenshotJob {
 impl App {
     pub fn new(settings: Settings, startup: Startup) -> Self {
         let base_command = settings.base.join(" ");
+        let mut analyze = AnalyzeTab::default();
+        if let Some(path) = &startup.open_file {
+            analyze.set_path(path.clone());
+        }
+        if let Some(view) = startup.analyze_view {
+            analyze.set_view(view);
+        }
         let mut wifi = WifiTab::default();
         if let Some(view) = startup.wifi_view {
             wifi.set_view(view);
@@ -68,6 +80,7 @@ impl App {
             lldp: LldpTab::default(),
             capture: CaptureTab::default(),
             mirror: MirrorTab::default(),
+            analyze,
             wifi,
             base_command,
             screenshot: startup.screenshot.map(|(path, delay)| ScreenshotJob {
@@ -95,6 +108,7 @@ impl App {
             Tab::Lldp => self.lldp.autorun(&settings),
             Tab::Capture => self.capture.autorun(&settings),
             Tab::Mirror => self.mirror.autorun(&settings),
+            Tab::Analyze => self.analyze.autorun(&settings),
             Tab::Wifi => self.wifi.autorun(&settings),
         }
     }
@@ -132,6 +146,7 @@ impl App {
         changed |= self.lldp.tick();
         changed |= self.capture.tick();
         changed |= self.mirror.tick();
+        changed |= self.analyze.tick();
         changed |= self.wifi.tick();
         changed
     }
@@ -140,6 +155,10 @@ impl App {
         match action {
             Action::None => {}
             Action::RefreshInterfaces => self.refresh_inventory(),
+            Action::AnalyzeFile(path) => {
+                self.analyze.set_path(path);
+                self.tab = Tab::Analyze;
+            }
             Action::ScanTarget(target) => {
                 self.scan.set_target(target);
                 self.tab = Tab::Scan;
@@ -324,6 +343,7 @@ impl eframe::App for App {
                         Tab::Lldp => self.lldp.ui(ui, &settings, inventory),
                         Tab::Capture => self.capture.ui(ui, &settings, inventory),
                         Tab::Mirror => self.mirror.ui(ui, &settings, inventory),
+                        Tab::Analyze => self.analyze.ui(ui, &settings, inventory),
                         Tab::Wifi => self.wifi.ui(ui, &settings, inventory),
                     })
                     .inner

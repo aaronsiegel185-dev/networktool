@@ -1,0 +1,568 @@
+{
+  "packets": 68,
+  "bytes": 16372,
+  "duration": 6.506,
+  "start": 1700000000.001,
+  "protocols": {
+    "TCP": 59,
+    "UDP": 7,
+    "ARP": 2
+  },
+  "protocol_bytes": {
+    "TCP": 15786,
+    "UDP": 502,
+    "ARP": 84
+  },
+  "hierarchy": [
+    {
+      "layers": "IPv4 > TCP",
+      "packets": 59,
+      "packets_pct": 86.8,
+      "bytes": 15786,
+      "bytes_pct": 96.4
+    },
+    {
+      "layers": "IPv4 > UDP > DNS",
+      "packets": 7,
+      "packets_pct": 10.3,
+      "bytes": 502,
+      "bytes_pct": 3.1
+    },
+    {
+      "layers": "ARP",
+      "packets": 2,
+      "packets_pct": 2.9,
+      "bytes": 84,
+      "bytes_pct": 0.5
+    }
+  ],
+  "vlans": {},
+  "conversations": {
+    "tcp": [
+      {
+        "kind": "tcp",
+        "a": "10.0.0.5:51000",
+        "b": "93.184.216.34:443",
+        "packets": 56,
+        "bytes": 15624,
+        "packets_ab": 28,
+        "bytes_ab": 4112,
+        "packets_ba": 28,
+        "bytes_ba": 11512,
+        "start": 0.0,
+        "duration": 2.331,
+        "bps_ab": 14112.4,
+        "bps_ba": 39509.2,
+        "protocol": "TCP",
+        "service": 443
+      },
+      {
+        "kind": "tcp",
+        "a": "10.0.0.250:445",
+        "b": "10.0.0.9:52000",
+        "packets": 3,
+        "bytes": 162,
+        "packets_ab": 0,
+        "bytes_ab": 0,
+        "packets_ba": 3,
+        "bytes_ba": 162,
+        "start": 3.331,
+        "duration": 2.0,
+        "bps_ab": 0.0,
+        "bps_ba": 648.0,
+        "protocol": "TCP",
+        "service": 445
+      }
+    ],
+    "udp": [
+      {
+        "kind": "udp",
+        "a": "10.0.0.1:53",
+        "b": "10.0.0.5:51002",
+        "packets": 2,
+        "bytes": 146,
+        "packets_ab": 1,
+        "bytes_ab": 73,
+        "packets_ba": 1,
+        "bytes_ba": 73,
+        "start": 5.366,
+        "duration": 0.9,
+        "bps_ab": 648.9,
+        "bps_ba": 648.9,
+        "protocol": "UDP",
+        "service": 53
+      },
+      {
+        "kind": "udp",
+        "a": "10.0.0.1:53",
+        "b": "10.0.0.5:51003",
+        "packets": 2,
+        "bytes": 144,
+        "packets_ab": 1,
+        "bytes_ab": 72,
+        "packets_ba": 1,
+        "bytes_ba": 72,
+        "start": 6.276,
+        "duration": 0.02,
+        "bps_ab": 0.0,
+        "bps_ba": 0.0,
+        "protocol": "UDP",
+        "service": 53
+      },
+      {
+        "kind": "udp",
+        "a": "10.0.0.1:53",
+        "b": "10.0.0.5:51001",
+        "packets": 2,
+        "bytes": 142,
+        "packets_ab": 1,
+        "bytes_ab": 71,
+        "packets_ba": 1,
+        "bytes_ba": 71,
+        "start": 5.341,
+        "duration": 0.015,
+        "bps_ab": 0.0,
+        "bps_ba": 0.0,
+        "protocol": "UDP",
+        "service": 53
+      },
+      {
+        "kind": "udp",
+        "a": "10.0.0.1:53",
+        "b": "10.0.0.5:51004",
+        "packets": 1,
+        "bytes": 70,
+        "packets_ab": 0,
+        "bytes_ab": 0,
+        "packets_ba": 1,
+        "bytes_ba": 70,
+        "start": 6.306,
+        "duration": 0.0,
+        "bps_ab": 0.0,
+        "bps_ba": 0.0,
+        "protocol": "UDP",
+        "service": 53
+      }
+    ],
+    "ip": [
+      {
+        "kind": "ip",
+        "a": "10.0.0.5",
+        "b": "93.184.216.34",
+        "packets": 56,
+        "bytes": 15624,
+        "packets_ab": 28,
+        "bytes_ab": 4112,
+        "packets_ba": 28,
+        "bytes_ba": 11512,
+        "start": 0.0,
+        "duration": 2.331,
+        "bps_ab": 14112.4,
+        "bps_ba": 39509.2,
+        "protocol": "TCP",
+        "service": null
+      },
+      {
+        "kind": "ip",
+        "a": "10.0.0.1",
+        "b": "10.0.0.5",
+        "packets": 7,
+        "bytes": 502,
+        "packets_ab": 3,
+        "bytes_ab": 216,
+        "packets_ba": 4,
+        "bytes_ba": 286,
+        "start": 5.341,
+        "duration": 0.965,
+        "bps_ab": 1790.7,
+        "bps_ba": 2371.0,
+        "protocol": "UDP",
+        "service": null
+      },
+      {
+        "kind": "ip",
+        "a": "10.0.0.250",
+        "b": "10.0.0.9",
+        "packets": 3,
+        "bytes": 162,
+        "packets_ab": 0,
+        "bytes_ab": 0,
+        "packets_ba": 3,
+        "bytes_ba": 162,
+        "start": 3.331,
+        "duration": 2.0,
+        "bps_ab": 0.0,
+        "bps_ba": 648.0,
+        "protocol": "TCP",
+        "service": null
+      },
+      {
+        "kind": "ip",
+        "a": "10.0.0.5",
+        "b": "10.0.0.77",
+        "packets": 2,
+        "bytes": 84,
+        "packets_ab": 0,
+        "bytes_ab": 0,
+        "packets_ba": 2,
+        "bytes_ba": 84,
+        "start": 6.406,
+        "duration": 0.1,
+        "bps_ab": 0.0,
+        "bps_ba": 6720.1,
+        "protocol": "ARP",
+        "service": null
+      }
+    ],
+    "ipv6": [],
+    "ethernet": [
+      {
+        "kind": "ethernet",
+        "a": "00:0c:29:cc:00:01",
+        "b": "00:1b:21:aa:00:05",
+        "packets": 63,
+        "bytes": 16126,
+        "packets_ab": 31,
+        "bytes_ab": 11728,
+        "packets_ba": 32,
+        "bytes_ba": 4398,
+        "start": 0.0,
+        "duration": 6.306,
+        "bps_ab": 14878.5,
+        "bps_ba": 5579.4,
+        "protocol": "TCP",
+        "service": null
+      },
+      {
+        "kind": "ethernet",
+        "a": "3c:22:fb:bb:00:06",
+        "b": "b8:27:eb:dd:00:09",
+        "packets": 3,
+        "bytes": 162,
+        "packets_ab": 0,
+        "bytes_ab": 0,
+        "packets_ba": 3,
+        "bytes_ba": 162,
+        "start": 3.331,
+        "duration": 2.0,
+        "bps_ab": 0.0,
+        "bps_ba": 648.0,
+        "protocol": "TCP",
+        "service": null
+      },
+      {
+        "kind": "ethernet",
+        "a": "00:11:22:33:44:55",
+        "b": "ff:ff:ff:ff:ff:ff",
+        "packets": 1,
+        "bytes": 42,
+        "packets_ab": 1,
+        "bytes_ab": 42,
+        "packets_ba": 0,
+        "bytes_ba": 0,
+        "start": 6.406,
+        "duration": 0.0,
+        "bps_ab": 0.0,
+        "bps_ba": 0.0,
+        "protocol": "ARP",
+        "service": null
+      },
+      {
+        "kind": "ethernet",
+        "a": "aa:bb:cc:dd:ee:ff",
+        "b": "ff:ff:ff:ff:ff:ff",
+        "packets": 1,
+        "bytes": 42,
+        "packets_ab": 1,
+        "bytes_ab": 42,
+        "packets_ba": 0,
+        "bytes_ba": 0,
+        "start": 6.506,
+        "duration": 0.0,
+        "bps_ab": 0.0,
+        "bps_ba": 0.0,
+        "protocol": "ARP",
+        "service": null
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "address": "10.0.0.5",
+      "packets": 65,
+      "bytes": 16210,
+      "packets_tx": 32,
+      "bytes_tx": 4398,
+      "packets_rx": 33,
+      "bytes_rx": 11812,
+      "peers": 3,
+      "top_ports": [
+        443,
+        53
+      ]
+    },
+    {
+      "address": "93.184.216.34",
+      "packets": 56,
+      "bytes": 15624,
+      "packets_tx": 28,
+      "bytes_tx": 11512,
+      "packets_rx": 28,
+      "bytes_rx": 4112,
+      "peers": 1,
+      "top_ports": []
+    },
+    {
+      "address": "10.0.0.1",
+      "packets": 7,
+      "bytes": 502,
+      "packets_tx": 3,
+      "bytes_tx": 216,
+      "packets_rx": 4,
+      "bytes_rx": 286,
+      "peers": 1,
+      "top_ports": []
+    },
+    {
+      "address": "10.0.0.9",
+      "packets": 3,
+      "bytes": 162,
+      "packets_tx": 3,
+      "bytes_tx": 162,
+      "packets_rx": 0,
+      "bytes_rx": 0,
+      "peers": 1,
+      "top_ports": [
+        445
+      ]
+    },
+    {
+      "address": "10.0.0.250",
+      "packets": 3,
+      "bytes": 162,
+      "packets_tx": 0,
+      "bytes_tx": 0,
+      "packets_rx": 3,
+      "bytes_rx": 162,
+      "peers": 1,
+      "top_ports": []
+    },
+    {
+      "address": "10.0.0.77",
+      "packets": 2,
+      "bytes": 84,
+      "packets_tx": 2,
+      "bytes_tx": 84,
+      "packets_rx": 0,
+      "bytes_rx": 0,
+      "peers": 1,
+      "top_ports": []
+    }
+  ],
+  "mac_endpoints": [
+    {
+      "address": "00:1b:21:aa:00:05",
+      "packets": 63,
+      "bytes": 16126,
+      "packets_tx": 32,
+      "bytes_tx": 4398,
+      "packets_rx": 31,
+      "bytes_rx": 11728,
+      "peers": 1,
+      "top_ports": []
+    },
+    {
+      "address": "00:0c:29:cc:00:01",
+      "packets": 63,
+      "bytes": 16126,
+      "packets_tx": 31,
+      "bytes_tx": 11728,
+      "packets_rx": 32,
+      "bytes_rx": 4398,
+      "peers": 1,
+      "top_ports": []
+    },
+    {
+      "address": "b8:27:eb:dd:00:09",
+      "packets": 3,
+      "bytes": 162,
+      "packets_tx": 3,
+      "bytes_tx": 162,
+      "packets_rx": 0,
+      "bytes_rx": 0,
+      "peers": 1,
+      "top_ports": []
+    },
+    {
+      "address": "3c:22:fb:bb:00:06",
+      "packets": 3,
+      "bytes": 162,
+      "packets_tx": 0,
+      "bytes_tx": 0,
+      "packets_rx": 3,
+      "bytes_rx": 162,
+      "peers": 1,
+      "top_ports": []
+    },
+    {
+      "address": "ff:ff:ff:ff:ff:ff",
+      "packets": 2,
+      "bytes": 84,
+      "packets_tx": 0,
+      "bytes_tx": 0,
+      "packets_rx": 2,
+      "bytes_rx": 84,
+      "peers": 2,
+      "top_ports": []
+    },
+    {
+      "address": "00:11:22:33:44:55",
+      "packets": 1,
+      "bytes": 42,
+      "packets_tx": 1,
+      "bytes_tx": 42,
+      "packets_rx": 0,
+      "bytes_rx": 0,
+      "peers": 1,
+      "top_ports": []
+    },
+    {
+      "address": "aa:bb:cc:dd:ee:ff",
+      "packets": 1,
+      "bytes": 42,
+      "packets_tx": 1,
+      "bytes_tx": 42,
+      "packets_rx": 0,
+      "bytes_rx": 0,
+      "peers": 1,
+      "top_ports": []
+    }
+  ],
+  "tcp": {
+    "segments": 59,
+    "flows": 2,
+    "completed_handshakes": 1,
+    "syns": 4,
+    "retransmissions": 6,
+    "retransmission_pct": 10.17,
+    "out_of_order": 0,
+    "duplicate_acks": 6,
+    "zero_window": 1,
+    "resets": 1,
+    "handshake_ms_avg": 20.0,
+    "handshake_ms_max": 20.0,
+    "unanswered_syns": [
+      {
+        "to": "10.0.0.250:445"
+      }
+    ]
+  },
+  "dns": {
+    "queries": 4,
+    "answered": 3,
+    "unanswered": 1,
+    "latency_ms_avg": 311.67,
+    "latency_ms_max": 900.0,
+    "slowest": [
+      {
+        "name": "slow.internal",
+        "ms": 900.0
+      },
+      {
+        "name": "typo.exampel",
+        "ms": 20.0
+      },
+      {
+        "name": "example.com",
+        "ms": 15.0
+      }
+    ],
+    "failures": {
+      "typo.exampel: name-error (NXDOMAIN)": 1
+    },
+    "top_names": {
+      "example.com": 1,
+      "slow.internal": 1,
+      "typo.exampel": 1,
+      "lost.query": 1
+    }
+  },
+  "throughput": [
+    {
+      "t": 0.0,
+      "packets": 44,
+      "bytes": 14476,
+      "bps": 115808.0
+    },
+    {
+      "t": 1.0,
+      "packets": 4,
+      "bytes": 616,
+      "bps": 4928.0
+    },
+    {
+      "t": 2.0,
+      "packets": 8,
+      "bytes": 532,
+      "bps": 4256.0
+    },
+    {
+      "t": 3.0,
+      "packets": 1,
+      "bytes": 54,
+      "bps": 432.0
+    },
+    {
+      "t": 4.0,
+      "packets": 1,
+      "bytes": 54,
+      "bps": 432.0
+    },
+    {
+      "t": 5.0,
+      "packets": 4,
+      "bytes": 269,
+      "bps": 2152.0
+    },
+    {
+      "t": 6.0,
+      "packets": 6,
+      "bytes": 371,
+      "bps": 2968.0
+    }
+  ],
+  "findings": [
+    [
+      "critical",
+      "10.2% of TCP segments are retransmissions - packet loss on the path."
+    ],
+    [
+      "warn",
+      "1 zero-window advertisements - a receiver could not keep up with the sender."
+    ],
+    [
+      "warn",
+      "1 connection attempt(s) got no SYN/ACK: 10.0.0.250:445"
+    ],
+    [
+      "warn",
+      "1 resets across 2 TCP flows - services refusing or dropping connections."
+    ],
+    [
+      "warn",
+      "DNS failures: typo.exampel: name-error (NXDOMAIN)"
+    ],
+    [
+      "warn",
+      "1 DNS queries were never answered."
+    ],
+    [
+      "warn",
+      "DNS answers average 312 ms."
+    ],
+    [
+      "critical",
+      "10.0.0.77 is claimed by 2 MAC addresses (00:11:22:33:44:55, aa:bb:cc:dd:ee:ff) - a duplicate IP."
+    ]
+  ]
+}

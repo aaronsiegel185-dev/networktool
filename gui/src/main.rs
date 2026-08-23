@@ -5,12 +5,15 @@
 
 use eframe::egui;
 use nettool_gui::app::Startup;
+use nettool_gui::ui::analyze::View as AnalyzeView;
 use nettool_gui::ui::wifi::View as WifiView;
 use nettool_gui::{app, runner, ui};
 use ui::Tab;
 
 struct Options {
     tab: Tab,
+    open_file: Option<String>,
+    analyze_view: Option<AnalyzeView>,
     wifi_view: Option<WifiView>,
     screenshot: Option<String>,
     screenshot_delay: f32,
@@ -22,6 +25,8 @@ struct Options {
 fn parse_options() -> Result<Options, String> {
     let mut options = Options {
         tab: Tab::Overview,
+        open_file: None,
+        analyze_view: None,
         wifi_view: None,
         screenshot: None,
         screenshot_delay: 3.0,
@@ -36,10 +41,12 @@ fn parse_options() -> Result<Options, String> {
                 println!(
                     "nettool-gui - desktop GUI for nettool\n\n\
                      Options:\n  \
-                     --tab <name>        open on a tab: overview, discover, scan, lldp, capture, mirror, wifi\n  \
+                     --tab <name>        open on a tab: overview, discover, scan, lldp, capture, mirror, analyze, wifi\n  \
                      --nettool <cmd>     how to run nettool (default: autodetect, e.g. \"python3 -m nettool\")\n  \
                      --sudo              run nettool through `sudo -n`\n  \
                      --wifi-view <name>  wifi sub-view: analyze, networks, link, monitor\n  \
+                     --open <file.pcap>  open a capture in the analysis tab\n  \
+                     --analyze-view <v>  conversations, endpoints, protocols, tcp, dns, throughput\n  \
                      --autorun           run the opening tab's action immediately\n  \
                      --screenshot <png>  render, save a PNG and exit (for docs/CI)\n  \
                      --screenshot-delay <seconds>  how long to let results load first\n"
@@ -55,6 +62,7 @@ fn parse_options() -> Result<Options, String> {
                     "lldp" | "cdp" => Tab::Lldp,
                     "capture" => Tab::Capture,
                     "mirror" | "vlan" | "span" => Tab::Mirror,
+                    "analyze" | "analyse" | "stats" => Tab::Analyze,
                     "wifi" | "wireless" => Tab::Wifi,
                     other => return Err(format!("unknown tab: {other}")),
                 };
@@ -77,6 +85,22 @@ fn parse_options() -> Result<Options, String> {
                     "link" => WifiView::Link,
                     "monitor" => WifiView::Monitor,
                     other => return Err(format!("unknown wifi view: {other}")),
+                });
+            }
+            "--open" => {
+                options.open_file = Some(argv.next().ok_or("--open needs a file path")?);
+                options.tab = Tab::Analyze;
+            }
+            "--analyze-view" => {
+                let value = argv.next().ok_or("--analyze-view needs a value")?;
+                options.analyze_view = Some(match value.to_ascii_lowercase().as_str() {
+                    "conversations" | "conv" => AnalyzeView::Conversations,
+                    "endpoints" => AnalyzeView::Endpoints,
+                    "protocols" | "hierarchy" => AnalyzeView::Protocols,
+                    "tcp" => AnalyzeView::Tcp,
+                    "dns" => AnalyzeView::Dns,
+                    "throughput" | "io" => AnalyzeView::Throughput,
+                    other => return Err(format!("unknown analysis view: {other}")),
                 });
             }
             "--autorun" => options.autorun = true,
@@ -119,6 +143,8 @@ fn main() -> eframe::Result<()> {
 
     let startup = Startup {
         tab: options.tab,
+        open_file: options.open_file.clone(),
+        analyze_view: options.analyze_view,
         wifi_view: options.wifi_view,
         autorun: options.autorun,
         screenshot: options

@@ -144,6 +144,7 @@ impl CaptureTab {
         settings: &Settings,
         inventory: &Option<IfaceReport>,
     ) -> Action {
+        let mut action = Action::None;
         let interfaces = inventory
             .as_ref()
             .map(|i| i.interfaces.as_slice())
@@ -272,6 +273,9 @@ impl CaptureTab {
             if !self.outfile.trim().is_empty() && ui.button("use last output file").clicked() {
                 self.open_path = self.outfile.trim().to_string();
             }
+            if !self.open_path.trim().is_empty() && ui.button("Open in Analyse").clicked() {
+                action = Action::AnalyzeFile(self.open_path.trim().to_string());
+            }
             if self.open_job.as_ref().map(|j| j.running()).unwrap_or(false) {
                 ui.spinner();
             }
@@ -327,7 +331,7 @@ impl CaptureTab {
             }
         }
         job_footer(ui, &self.open_job, &self.open_error);
-        Action::None
+        action
     }
 }
 

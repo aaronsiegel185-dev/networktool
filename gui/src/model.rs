@@ -392,6 +392,216 @@ impl CaptureReport {
     }
 }
 
+// --- analysis --------------------------------------------------------------
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct Conversation {
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub a: String,
+    #[serde(default)]
+    pub b: String,
+    #[serde(default)]
+    pub packets: u64,
+    #[serde(default)]
+    pub bytes: u64,
+    #[serde(default)]
+    pub packets_ab: u64,
+    #[serde(default)]
+    pub bytes_ab: u64,
+    #[serde(default)]
+    pub packets_ba: u64,
+    #[serde(default)]
+    pub bytes_ba: u64,
+    #[serde(default)]
+    pub start: f64,
+    #[serde(default)]
+    pub duration: f64,
+    #[serde(default)]
+    pub bps_ab: f64,
+    #[serde(default)]
+    pub bps_ba: f64,
+    #[serde(default)]
+    pub protocol: String,
+    #[serde(default)]
+    pub service: Option<i64>,
+}
+
+impl Conversation {
+    /// True when only one side of the exchange was captured.
+    pub fn one_sided(&self) -> bool {
+        self.packets_ab == 0 || self.packets_ba == 0
+    }
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct EndpointStat {
+    #[serde(default)]
+    pub address: String,
+    #[serde(default)]
+    pub packets: u64,
+    #[serde(default)]
+    pub bytes: u64,
+    #[serde(default)]
+    pub packets_tx: u64,
+    #[serde(default)]
+    pub bytes_tx: u64,
+    #[serde(default)]
+    pub packets_rx: u64,
+    #[serde(default)]
+    pub bytes_rx: u64,
+    #[serde(default)]
+    pub peers: u64,
+    #[serde(default)]
+    pub top_ports: Vec<i64>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct HierarchyRow {
+    #[serde(default)]
+    pub layers: String,
+    #[serde(default)]
+    pub packets: u64,
+    #[serde(default)]
+    pub packets_pct: f64,
+    #[serde(default)]
+    pub bytes: u64,
+    #[serde(default)]
+    pub bytes_pct: f64,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct UnansweredSyn {
+    #[serde(default)]
+    pub to: String,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct TcpHealth {
+    #[serde(default)]
+    pub segments: u64,
+    #[serde(default)]
+    pub flows: u64,
+    #[serde(default)]
+    pub completed_handshakes: u64,
+    #[serde(default)]
+    pub syns: u64,
+    #[serde(default)]
+    pub retransmissions: u64,
+    #[serde(default)]
+    pub retransmission_pct: f64,
+    #[serde(default)]
+    pub out_of_order: u64,
+    #[serde(default)]
+    pub duplicate_acks: u64,
+    #[serde(default)]
+    pub zero_window: u64,
+    #[serde(default)]
+    pub resets: u64,
+    #[serde(default)]
+    pub handshake_ms_avg: Option<f64>,
+    #[serde(default)]
+    pub handshake_ms_max: Option<f64>,
+    #[serde(default)]
+    pub unanswered_syns: Vec<UnansweredSyn>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct SlowLookup {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub ms: f64,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct DnsHealth {
+    #[serde(default)]
+    pub queries: u64,
+    #[serde(default)]
+    pub answered: u64,
+    #[serde(default)]
+    pub unanswered: u64,
+    #[serde(default)]
+    pub latency_ms_avg: Option<f64>,
+    #[serde(default)]
+    pub latency_ms_max: Option<f64>,
+    #[serde(default)]
+    pub slowest: Vec<SlowLookup>,
+    #[serde(default)]
+    pub failures: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub top_names: BTreeMap<String, u64>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct ThroughputPoint {
+    #[serde(default)]
+    pub t: f64,
+    #[serde(default)]
+    pub packets: u64,
+    #[serde(default)]
+    pub bytes: u64,
+    #[serde(default)]
+    pub bps: f64,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct Conversations {
+    #[serde(default)]
+    pub tcp: Vec<Conversation>,
+    #[serde(default)]
+    pub udp: Vec<Conversation>,
+    #[serde(default)]
+    pub ip: Vec<Conversation>,
+    #[serde(default)]
+    pub ipv6: Vec<Conversation>,
+    #[serde(default)]
+    pub ethernet: Vec<Conversation>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct AnalysisReport {
+    #[serde(default)]
+    pub packets: u64,
+    #[serde(default)]
+    pub bytes: u64,
+    #[serde(default)]
+    pub duration: f64,
+    #[serde(default)]
+    pub protocols: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub hierarchy: Vec<HierarchyRow>,
+    #[serde(default)]
+    pub vlans: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub conversations: Conversations,
+    #[serde(default)]
+    pub endpoints: Vec<EndpointStat>,
+    #[serde(default)]
+    pub mac_endpoints: Vec<EndpointStat>,
+    #[serde(default)]
+    pub tcp: TcpHealth,
+    #[serde(default)]
+    pub dns: DnsHealth,
+    #[serde(default)]
+    pub throughput: Vec<ThroughputPoint>,
+    /// `[severity, message]` pairs.
+    #[serde(default)]
+    pub findings: Vec<(String, String)>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct StreamDump {
+    #[serde(default)]
+    pub conversation: Conversation,
+    #[serde(default)]
+    pub bytes: u64,
+    #[serde(default)]
+    pub stream: String,
+}
+
 // --- mirror ----------------------------------------------------------------
 
 #[derive(Debug, Default, Clone, Deserialize)]

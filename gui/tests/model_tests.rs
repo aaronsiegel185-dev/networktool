@@ -227,6 +227,75 @@ fn parses_wifi_analysis_including_integer_keyed_maps() {
 }
 
 #[test]
+fn parses_analysis_report() {
+    let report: AnalysisReport = load("analyze.json");
+    assert!(report.packets > 0);
+    assert!(report.duration > 0.0);
+
+    // Conversations exist at every layer the capture contains, counted per direction.
+    let tcp = &report.conversations.tcp;
+    assert!(!tcp.is_empty());
+    let busiest = &tcp[0];
+    assert_eq!(busiest.packets, busiest.packets_ab + busiest.packets_ba);
+    assert_eq!(busiest.bytes, busiest.bytes_ab + busiest.bytes_ba);
+    assert!(!busiest.one_sided());
+    assert!(!report.conversations.udp.is_empty());
+    assert!(!report.conversations.ip.is_empty());
+    assert!(!report.conversations.ethernet.is_empty());
+
+    // The dead connection attempt is the one-sided conversation.
+    assert!(tcp.iter().any(|c| c.one_sided()));
+
+    assert!(!report.endpoints.is_empty());
+    assert!(report
+        .endpoints
+        .iter()
+        .all(|e| e.packets == e.packets_tx + e.packets_rx));
+
+    let hierarchy: Vec<&str> = report.hierarchy.iter().map(|h| h.layers.as_str()).collect();
+    assert!(hierarchy.iter().any(|layers| layers.contains("TCP")));
+    assert!(report.hierarchy.iter().all(|h| h.packets_pct <= 100.0));
+
+    assert!(report.tcp.retransmissions > 0);
+    assert!(report.tcp.retransmission_pct > 0.0);
+    assert!(report.tcp.handshake_ms_avg.is_some());
+    assert!(!report.tcp.unanswered_syns.is_empty());
+
+    assert!(report.dns.queries > 0);
+    assert!(report.dns.unanswered > 0);
+    assert!(!report.dns.failures.is_empty());
+    assert!(!report.dns.slowest.is_empty());
+
+    assert!(report.throughput.len() >= 2);
+    assert!(!report.findings.is_empty());
+}
+
+#[test]
+fn one_sided_detection() {
+    let two_way = Conversation {
+        packets_ab: 3,
+        packets_ba: 4,
+        ..Default::default()
+    };
+    assert!(!two_way.one_sided());
+    assert!(Conversation {
+        packets_ab: 5,
+        packets_ba: 0,
+        ..Default::default()
+    }
+    .one_sided());
+}
+
+#[test]
+fn parses_followed_stream() {
+    let dump: StreamDump = load("analyze_stream.json");
+    assert!(dump.bytes > 0);
+    assert!(dump.stream.contains("->"));
+    assert!(dump.stream.contains("<-"));
+    assert!(!dump.conversation.a.is_empty());
+}
+
+#[test]
 fn parses_mirror_report() {
     let report: MirrorReport = load("mirror.json");
     assert!(report.packets > 0);
