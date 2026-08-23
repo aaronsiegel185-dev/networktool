@@ -409,3 +409,21 @@ fn names_the_authorisation_states() {
     assert_eq!(maclocation::status_name(4), "authorised (when in use)");
     assert_eq!(maclocation::status_name(99), "unknown");
 }
+
+#[test]
+fn names_the_access_point_or_says_why_not() {
+    let known: WifiLink = serde_json::from_str(
+        r#"{"bssid":"3c:37:86:11:22:33","bssid_vendor":"Ubiquiti Inc","connected":true}"#,
+    )
+    .unwrap();
+    assert_eq!(known.display_bssid(), "3c:37:86:11:22:33");
+    assert_eq!(known.bssid_vendor, "Ubiquiti Inc");
+
+    let blanked: WifiLink =
+        serde_json::from_str(r#"{"bssid":"","redacted":true,"connected":true}"#).unwrap();
+    assert_eq!(blanked.display_bssid(), "(hidden by macOS)");
+
+    // Not associated, and nothing redacted - the MAC is simply not known.
+    let none: WifiLink = serde_json::from_str(r#"{"bssid":""}"#).unwrap();
+    assert_eq!(none.display_bssid(), "unknown");
+}

@@ -10,6 +10,7 @@ import sys
 import time
 
 from . import iface as ifmod
+from . import oui
 from .util import NetToolError, have_cmd, run_cmd
 
 IS_DARWIN = sys.platform == "darwin"
@@ -534,6 +535,17 @@ def parse_iwlist_scan(text):
     return nets
 
 
+def _name_the_ap(state):
+    """Label the BSSID with whoever made the radio.
+
+    A bare MAC does not tell you which box you are on; the OUI does, and on a
+    site with mixed hardware that is usually the question being asked.
+    """
+    bssid = state.get("bssid") or ""
+    state["bssid_vendor"] = oui.lookup(bssid) if bssid else ""
+    return state
+
+
 def link(ifname=None):
     """Current association state.
 
@@ -553,7 +565,7 @@ def link(ifname=None):
         state["quality_pct"] = quality_percent(signal)
         if state.get("freq") is None and state.get("channel") and state.get("band"):
             state["freq"] = channel_to_freq(state["channel"], state["band"]) or None
-        return state
+        return _name_the_ap(state)
     ifname = pick_interface(ifname)
     info = {"interface": ifname, "connected": False}
     if have_cmd("iw"):
@@ -588,7 +600,7 @@ def link(ifname=None):
         if survey and survey[0].get("noise_dbm") is not None:
             info["noise_dbm"] = survey[0]["noise_dbm"]
             info["snr_db"] = round(info["signal_dbm"] - survey[0]["noise_dbm"], 1)
-    return info
+    return _name_the_ap(info)
 
 
 def survey_dump(ifname=None):

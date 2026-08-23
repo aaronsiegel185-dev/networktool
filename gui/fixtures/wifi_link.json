@@ -37,5 +37,6 @@
     "rx_invalid_crypt": 0
   },
   "noise_dbm": -89.0,
-  "snr_db": 42.0
+  "snr_db": 42.0,
+  "bssid_vendor": "Ubiquiti Inc"
 }

@@ -118,6 +118,14 @@ Two macOS-specific caveats worth knowing:
   that the answer is changed in System Settings > Privacy & Security > Location
   Services. Signal, noise, channel, security and the whole interference analysis
   are unaffected throughout.
+* **The access point's MAC is shown wherever the link is.** `wifi link`, `wifi
+  analyze` and the app's Analyze, My link and Monitor views all name the BSSID you
+  are associated with, labelled with the vendor from its OUI - on a site with more
+  than one AP, a roam onto a weaker one looks exactly like interference until you
+  can see the MAC change. The Monitor view lists every AP the link moved between
+  and marks the current one. macOS hides the BSSID under the same Location
+  Services rule as the SSID; in the app CoreWLAN supplies it, and in the terminal
+  `sudo` lets `scutil` do so.
 * **No airtime survey.** The "60% of airtime is undecodable" line that Linux gets from
   `iw survey` has no macOS equivalent, so the interference verdict there is based on
   neighbour count, overlap, signal and SNR.

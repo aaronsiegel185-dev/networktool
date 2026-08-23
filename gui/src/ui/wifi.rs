@@ -575,12 +575,7 @@ impl WifiTab {
                         ui.label(
                             egui::RichText::new(link.display_ssid()).strong().size(20.0),
                         );
-                        ui.label(
-                            egui::RichText::new(&link.bssid)
-                                .monospace()
-                                .size(11.0)
-                                .color(widgets::MUTED),
-                        );
+                        access_point_row(ui, link);
                     });
                     ui.add_space(20.0);
                     ui.vertical(|ui| {
@@ -887,6 +882,7 @@ impl WifiTab {
                     ui.label(format!("SNR {snr:.0} dB"));
                 }
             });
+            access_point_row(ui, current);
             ui.add_space(4.0);
         }
 
@@ -1045,23 +1041,51 @@ impl WifiTab {
                 );
                 kv(ui, "swing", widgets::fmt_opt_f(stats.swing, 1));
                 if let Some(sample) = &self.last_sample {
-                    kv(
-                        ui,
-                        "current AP",
-                        format!(
-                            "{} ({})",
-                            if sample.ssid.is_empty() { "-" } else { &sample.ssid },
-                            sample.bssid
-                        ),
-                    );
+                    kv(ui, "network", sample.display_ssid());
+                    ui.label(egui::RichText::new("access point").color(widgets::MUTED));
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(sample.display_bssid())
+                                .monospace()
+                                .size(12.0),
+                        );
+                        if !sample.bssid_vendor.is_empty() {
+                            ui.label(
+                                egui::RichText::new(&sample.bssid_vendor)
+                                    .size(11.0)
+                                    .color(widgets::MUTED),
+                            );
+                        }
+                    });
+                    ui.end_row();
                     kv(ui, "tx bitrate", &sample.tx_bitrate);
                 }
                 if self.seen_bssids.len() > 1 {
                     ui.label(egui::RichText::new("roaming").color(widgets::MUTED));
-                    ui.colored_label(
-                        widgets::WARN,
-                        format!("moved between {} APs", self.seen_bssids.len()),
-                    );
+                    ui.vertical(|ui| {
+                        ui.colored_label(
+                            widgets::WARN,
+                            format!("moved between {} APs", self.seen_bssids.len()),
+                        );
+                        // Which ones, in the order we met them - a roam to a
+                        // weaker AP looks exactly like interference until you
+                        // can see the MAC change.
+                        for (index, bssid) in self.seen_bssids.iter().enumerate() {
+                            let mark = if Some(bssid)
+                                == self.last_sample.as_ref().map(|s| &s.bssid)
+                            {
+                                "now"
+                            } else {
+                                "   "
+                            };
+                            ui.label(
+                                egui::RichText::new(format!("{mark} {}. {bssid}", index + 1))
+                                    .monospace()
+                                    .size(11.0)
+                                    .color(widgets::MUTED),
+                            );
+                        }
+                    });
                     ui.end_row();
                 }
             });
@@ -1183,4 +1207,34 @@ fn name_link(link: &mut WifiLink, mine: Option<&macwifi::Neighbour>) {
     if link.bssid.is_empty() && !mine.bssid.is_empty() {
         link.bssid = mine.bssid.clone();
     }
+}
+
+/// The access point this link is on: its MAC, who made it, and a click to copy.
+///
+/// On a site with more than one AP the BSSID is the answer to "which box am I
+/// actually on" - roaming to a worse one looks identical to interference until
+/// you can see it change.
+fn access_point_row(ui: &mut egui::Ui, link: &WifiLink) {
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            egui::RichText::new("access point")
+                .size(11.0)
+                .color(widgets::MUTED),
+        );
+        let mac = link.display_bssid();
+        let response = ui.label(egui::RichText::new(mac).monospace().size(12.0));
+        if !link.bssid.is_empty() {
+            let response = response.on_hover_text("click to copy");
+            if response.clicked() {
+                ui.ctx().copy_text(link.bssid.clone());
+            }
+        }
+        if !link.bssid_vendor.is_empty() {
+            ui.label(
+                egui::RichText::new(&link.bssid_vendor)
+                    .size(11.0)
+                    .color(widgets::MUTED),
+            );
+        }
+    });
 }

@@ -975,9 +975,21 @@ pub struct WifiLink {
     /// macOS blanked the name because we lack Location Services.
     #[serde(default)]
     pub redacted: bool,
+    /// Who made the access point, from its BSSID's OUI.
+    #[serde(default)]
+    pub bssid_vendor: String,
 }
 
 impl WifiLink {
+    /// The access point's MAC, or why we do not have it.
+    pub fn display_bssid(&self) -> &str {
+        match (self.bssid.is_empty(), self.redacted) {
+            (false, _) => &self.bssid,
+            (true, true) => "(hidden by macOS)",
+            (true, false) => "unknown",
+        }
+    }
+
     pub fn display_ssid(&self) -> &str {
         match (self.ssid.is_empty(), self.redacted) {
             (false, _) => &self.ssid,

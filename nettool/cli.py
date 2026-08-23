@@ -603,6 +603,15 @@ def cmd_mirror(args):
 
 # --- wifi ------------------------------------------------------------------
 
+def _ap_label(state):
+    """The BSSID we are associated with, and who made it."""
+    bssid = state.get("bssid", "")
+    if not bssid:
+        return "(hidden by macOS)" if state.get("redacted") else ""
+    vendor = state.get("bssid_vendor") or ""
+    return "%s (%s)" % (bssid, vendor) if vendor else bssid
+
+
 def _ssid_label(net):
     """A network's name, or why we do not have one."""
     if net.get("ssid"):
@@ -662,8 +671,7 @@ def cmd_wifi_link(args):
     section("association on %s" % state["interface"])
     rows = [
         ["ssid", _ssid_label(state)],
-        ["bssid", state.get("bssid", "") or ("(hidden by macOS)"
-                                             if state.get("redacted") else "")],
+        ["access point", _ap_label(state)],
         ["band / channel", "%s GHz / %s" % (state.get("band", "?"), state.get("channel", "?"))],
         ["frequency", "%s MHz" % state.get("freq", "?")],
         ["signal", "%s dBm (%s, %s%%)" % (state.get("signal_dbm"), state.get("rating"),
@@ -855,6 +863,9 @@ def cmd_wifi_analyze(args):
             _ssid_label(current), current.get("channel"), current.get("signal_dbm"),
             current.get("rating"),
             ", SNR %s dB" % current["snr_db"] if current.get("snr_db") else ""))
+        ap = _ap_label(current)
+        if ap:
+            sys.stdout.write("  via access point %s\n" % ap)
     section("findings")
     for level, message in report["findings"]:
         sys.stdout.write("  %s %s\n" % (SEV_MARK.get(level, "[    ]"), message))

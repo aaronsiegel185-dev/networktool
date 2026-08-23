@@ -9,6 +9,7 @@ from contextlib import redirect_stdout, redirect_stderr
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from nettool import cli
 from nettool import portscan
 from nettool.cli import main
 from nettool.pcap import PcapWriter
@@ -127,6 +128,20 @@ class TestCliCommands(unittest.TestCase):
         code, out, _ = run_cli(["lldp", "--from-pcap", sample_pcap(), "--json"])
         payload = json.loads(out)
         self.assertEqual(len(payload["neighbors"]), 2)
+
+
+class TestApLabel(unittest.TestCase):
+    def test_names_the_access_point_with_its_vendor(self):
+        self.assertEqual(
+            cli._ap_label({"bssid": "3c:37:86:11:22:33", "bssid_vendor": "Ubiquiti Inc"}),
+            "3c:37:86:11:22:33 (Ubiquiti Inc)")
+
+    def test_unknown_vendor_leaves_the_mac_alone(self):
+        self.assertEqual(cli._ap_label({"bssid": "aa:bb:cc:dd:ee:ff"}), "aa:bb:cc:dd:ee:ff")
+
+    def test_blanked_bssid_says_who_blanked_it(self):
+        self.assertEqual(cli._ap_label({"bssid": "", "redacted": True}), "(hidden by macOS)")
+        self.assertEqual(cli._ap_label({"bssid": ""}), "")
 
 
 class TestPortScanAgainstLocalListener(unittest.TestCase):
