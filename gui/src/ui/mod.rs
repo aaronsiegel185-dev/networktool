@@ -160,6 +160,24 @@ pub fn job_footer(ui: &mut egui::Ui, job: &Option<Job>, error: &Option<String>) 
     }
 }
 
+/// What macOS blanking Wi-Fi names means, and how to stop it.
+///
+/// Only shown once a result has actually come back blanked - guessing at it up
+/// front tells people their permissions are wrong when they are not.
+pub fn hidden_names_hint(ui: &mut egui::Ui) {
+    ui.label(
+        egui::RichText::new(
+            "macOS hid the neighbouring network names: it blanks them for apps without \
+             Location Services. Your own network is read back from the interface \
+             configuration. To see the rest, turn nettool on under System Settings > \
+             Privacy & Security > Location Services. Signal and channel figures are \
+             unaffected.",
+        )
+        .color(widgets::MUTED)
+        .size(11.0),
+    );
+}
+
 /// Hint shown when a feature needs privileges the app may not have.
 ///
 /// macOS has a tidier answer than sudo - the BPF access helper - so name that first.

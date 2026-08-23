@@ -854,14 +854,17 @@ pub struct Bss {
     pub security: Vec<String>,
     #[serde(default)]
     pub associated: bool,
+    /// macOS blanked this name because we lack Location Services.
+    #[serde(default)]
+    pub redacted: bool,
 }
 
 impl Bss {
     pub fn display_ssid(&self) -> &str {
-        if self.ssid.is_empty() {
-            "(hidden)"
-        } else {
-            &self.ssid
+        match (self.ssid.is_empty(), self.redacted) {
+            (false, _) => &self.ssid,
+            (true, true) => "(hidden by macOS)",
+            (true, false) => "(hidden)",
         }
     }
 }
@@ -938,6 +941,19 @@ pub struct WifiLink {
     pub station: Option<Station>,
     #[serde(rename = "proc", default)]
     pub proc_stats: Option<ProcWireless>,
+    /// macOS blanked the name because we lack Location Services.
+    #[serde(default)]
+    pub redacted: bool,
+}
+
+impl WifiLink {
+    pub fn display_ssid(&self) -> &str {
+        match (self.ssid.is_empty(), self.redacted) {
+            (false, _) => &self.ssid,
+            (true, true) => "(hidden by macOS)",
+            (true, false) => "(unknown)",
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -1013,6 +1029,9 @@ pub struct WifiAnalysis {
     pub findings: Vec<(String, String)>,
     #[serde(default)]
     pub recommendations: BTreeMap<String, Recommendation>,
+    /// Some name in this report was blanked by macOS.
+    #[serde(default)]
+    pub redacted: bool,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]

@@ -5,7 +5,9 @@ use eframe::egui;
 use std::time::Duration;
 
 use super::widgets::{self, header_row, kv, BarChartItem};
-use super::{interface_picker, job_footer, root_hint, run_controls, stop_button, Action};
+use super::{
+    hidden_names_hint, interface_picker, job_footer, root_hint, run_controls, stop_button, Action,
+};
 use super::netmap;
 use crate::model::{
     Bss, DiscoverReport, IfaceReport, SurveyEntry, WifiAnalyzeReport, WifiLink,
@@ -280,7 +282,17 @@ impl WifiTab {
                 "No wireless interface detected on this machine.",
             );
         }
-        root_hint(ui, "Wi-Fi scanning", settings.use_sudo);
+        // Only monitor mode opens /dev/bpf*. The other views read the OS's own
+        // Wi-Fi state, which needs no privileges on macOS at all - claiming
+        // otherwise sent people chasing a permission problem they did not have.
+        if self.view == View::Monitor {
+            root_hint(ui, "Monitor-mode capture", settings.use_sudo);
+        } else if !cfg!(target_os = "macos") {
+            root_hint(ui, "A fresh Wi-Fi scan", settings.use_sudo);
+        }
+        if self.names_hidden() {
+            hidden_names_hint(ui);
+        }
         ui.add_space(6.0);
 
         match self.view {
@@ -348,13 +360,7 @@ impl WifiTab {
             ui.vertical(|ui| {
                 if link.connected || link.signal_dbm.is_some() {
                     ui.label(
-                        egui::RichText::new(if link.ssid.is_empty() {
-                            "(hidden SSID)"
-                        } else {
-                            &link.ssid
-                        })
-                        .strong()
-                        .size(18.0),
+                        egui::RichText::new(link.display_ssid()).strong().size(18.0),
                     );
                     egui::Grid::new("map_link")
                         .num_columns(2)
@@ -550,13 +556,7 @@ impl WifiTab {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         ui.label(
-                            egui::RichText::new(if link.ssid.is_empty() {
-                                "(unknown SSID)"
-                            } else {
-                                &link.ssid
-                            })
-                            .strong()
-                            .size(20.0),
+                            egui::RichText::new(link.display_ssid()).strong().size(20.0),
                         );
                         ui.label(
                             egui::RichText::new(&link.bssid)
@@ -654,6 +654,22 @@ impl WifiTab {
         job_footer(ui, &self.link_job, &self.link_error);
     }
 
+    /// True once something we have actually fetched came back with a blanked name.
+    fn names_hidden(&self) -> bool {
+        let link = self.link_report.as_ref().map(|l| l.redacted).unwrap_or(false);
+        let analyze = self
+            .analyze_report
+            .as_ref()
+            .map(|r| r.report.redacted || r.current.redacted)
+            .unwrap_or(false);
+        let scan = self
+            .scan_report
+            .as_ref()
+            .map(|r| r.networks.iter().any(|n| n.redacted))
+            .unwrap_or(false);
+        link || analyze || scan
+    }
+
     fn analyze_view(&mut self, ui: &mut egui::Ui, settings: &Settings) {
         let mut run = false;
         ui.horizontal(|ui| {
@@ -680,7 +696,7 @@ impl WifiTab {
                 ui.label(
                     egui::RichText::new(format!(
                         "{} on channel {}",
-                        if current.ssid.is_empty() { "(unknown)" } else { &current.ssid },
+                        current.display_ssid(),
                         widgets::fmt_opt(current.channel)
                     ))
                     .strong(),

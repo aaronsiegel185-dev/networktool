@@ -152,7 +152,7 @@ pub fn build(inputs: &MapInputs) -> NetworkMap {
     if let Some(link) = inputs.link {
         if connected {
             my_bssid = link.bssid.to_lowercase();
-            let ssid = if link.ssid.is_empty() { "(hidden SSID)" } else { &link.ssid };
+            let ssid = link.display_ssid();
             let detail = format!(
                 "{}  ·  ch {}  ·  {} GHz",
                 if link.bssid.is_empty() { "BSSID unknown" } else { &link.bssid },

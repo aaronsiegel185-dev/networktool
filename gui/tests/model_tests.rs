@@ -355,3 +355,24 @@ fn tolerates_missing_and_unknown_fields() {
     let empty: DiagReport = serde_json::from_str("{}").unwrap();
     assert!(empty.checks.is_empty());
 }
+
+#[test]
+fn distinguishes_a_hidden_ssid_from_one_macos_blanked() {
+    let hidden: Bss = serde_json::from_str(r#"{"ssid":"","bssid":"aa:bb:cc:dd:ee:ff"}"#).unwrap();
+    assert_eq!(hidden.display_ssid(), "(hidden)");
+
+    let blanked: Bss = serde_json::from_str(r#"{"ssid":"","redacted":true}"#).unwrap();
+    assert_eq!(blanked.display_ssid(), "(hidden by macOS)");
+
+    let named: Bss = serde_json::from_str(r#"{"ssid":"HomeNet","redacted":false}"#).unwrap();
+    assert_eq!(named.display_ssid(), "HomeNet");
+
+    // A name recovered from the interface config arrives named and unflagged.
+    let link: WifiLink =
+        serde_json::from_str(r#"{"ssid":"HomeNet","connected":true,"redacted":false}"#).unwrap();
+    assert_eq!(link.display_ssid(), "HomeNet");
+
+    let blanked_link: WifiLink =
+        serde_json::from_str(r#"{"ssid":"","connected":true,"redacted":true}"#).unwrap();
+    assert_eq!(blanked_link.display_ssid(), "(hidden by macOS)");
+}

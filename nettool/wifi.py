@@ -14,6 +14,16 @@ from .util import NetToolError, have_cmd, run_cmd
 
 IS_DARWIN = sys.platform == "darwin"
 
+# macOS hands "<redacted>" to a process that has not been granted Location
+# Services, so a blank name here is a permission story, not a hidden SSID.
+HIDDEN_NAMES_HINT = (
+    "macOS hides Wi-Fi names from processes without Location Services. Your own "
+    "network's name is read back from the interface configuration, but "
+    "neighbouring names stay blank until you grant it: System Settings > Privacy "
+    "& Security > Location Services > turn on the app running nettool (Terminal, "
+    "or nettool). Signal, channel and noise figures are unaffected either way."
+)
+
 # --- channel / frequency maths ---------------------------------------------
 
 DFS_CHANNELS = set(range(52, 145))          # 5 GHz channels requiring radar detection
@@ -649,7 +659,7 @@ def analyze(networks, current=None, survey=None):
         by_band.setdefault(net.get("band") or band_of(net.get("freq") or 0), []).append(net)
 
     report = {"total_bss": len(networks), "bands": {}, "current": current or {},
-              "findings": [], "recommendations": {}}
+              "findings": [], "recommendations": {}, "redacted": False}
 
     for band, nets in sorted(by_band.items()):
         channels = {}
@@ -688,7 +698,8 @@ def analyze(networks, current=None, survey=None):
                     "cochannel": cochannel,
                     "overlapping": adjacent,
                     "strongest_dbm": strongest["signal_dbm"],
-                    "strongest_ssid": strongest["ssid"] or "(hidden)",
+                    "strongest_ssid": strongest["ssid"] or (
+                        "(hidden by macOS)" if strongest.get("redacted") else "(hidden)"),
                     "utilization_pct": max(
                         [n["utilization_pct"] for n in channels[cand]
                          if n.get("utilization_pct") is not None] or [None]),
@@ -719,6 +730,10 @@ def analyze(networks, current=None, survey=None):
 def _add_findings(report, networks, current, survey):
     findings = report["findings"]
     cur = current or {}
+    report["redacted"] = bool(cur.get("redacted")
+                              or any(n.get("redacted") for n in networks))
+    if report["redacted"]:
+        findings.append(("info", HIDDEN_NAMES_HINT))
     sig = cur.get("signal_dbm")
     if sig is not None:
         if sig < -75:

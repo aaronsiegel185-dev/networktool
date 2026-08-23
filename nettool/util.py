@@ -46,14 +46,19 @@ def require_linux(what):
         raise NetToolError("%s is only implemented on Linux (found %s)." % (what, sys.platform))
 
 
-def run_cmd(argv, timeout=30):
-    """Run a command, returning (rc, stdout, stderr). rc=-1 if the binary is missing."""
+def run_cmd(argv, timeout=30, stdin=None):
+    """Run a command, returning (rc, stdout, stderr). rc=-1 if the binary is missing.
+
+    `stdin` is text fed to the command - some tools (scutil) only take a query
+    that way.
+    """
     exe = shutil.which(argv[0])
     if exe is None:
         return -1, "", "%s not found in PATH" % argv[0]
     try:
         proc = subprocess.run(
             [exe] + list(argv[1:]),
+            input=None if stdin is None else stdin.encode(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout,

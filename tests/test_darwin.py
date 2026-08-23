@@ -292,6 +292,82 @@ class TestWifiParsing(unittest.TestCase):
         self.assertEqual(link["snr_db"], 45.0)
         self.assertEqual(link["interface"], "en0")
 
+    def test_system_profiler_redaction_is_blanked_not_printed(self):
+        payload = json.loads(AIRPORT_JSON)
+        iface = payload["SPAirPortDataType"][0]["spairport_airport_interfaces"][0]
+        iface["spairport_current_network_information"]["_name"] = "<redacted>"
+        iface["spairport_airport_other_local_wireless_networks"][0]["_name"] = "<redacted>"
+        text = json.dumps(payload)
+
+        link = darwin.parse_airport_current(text)
+        self.assertEqual(link["ssid"], "")
+        self.assertTrue(link["redacted"])
+        # The radio numbers alongside the blanked name are still real.
+        self.assertEqual(link["signal_dbm"], -47.0)
+
+        networks = darwin.parse_airport_json(text)
+        blanked = [n for n in networks if n["redacted"]]
+        self.assertTrue(blanked)
+        self.assertTrue(all(n["ssid"] == "" for n in blanked))
+        # Two neighbours both blanked must not collapse into one row.
+        self.assertEqual(len(networks), len(darwin.parse_airport_json(AIRPORT_JSON)))
+
+    def test_networksetup_ssid(self):
+        self.assertEqual(
+            darwin.parse_networksetup_ssid("Current Wi-Fi Network: HomeNet\n"),
+            "HomeNet")
+        self.assertEqual(
+            darwin.parse_networksetup_ssid(
+                "You are not associated with an AirPort network.\n"),
+            "")
+        self.assertEqual(
+            darwin.parse_networksetup_ssid("Current Wi-Fi Network: <redacted>\n"), "")
+
+    def test_scutil_airport_dictionary(self):
+        text = """<dictionary> {
+  BSSID : 3c:22:fb:11:22:33
+  SSID : <data> 0x486f6d654e6574
+  SSID_STR : HomeNet
+  Power Status : 1
+}
+"""
+        found = darwin.parse_scutil_airport(text)
+        self.assertEqual(found["ssid"], "HomeNet")
+        self.assertEqual(found["bssid"], "3c:22:fb:11:22:33")
+
+    def test_blanked_name_is_recovered_without_location_permission(self):
+        link = {"interface": "en0", "ssid": "", "bssid": "", "redacted": True}
+        calls = []
+
+        def fake_run(argv, timeout=30, stdin=None):
+            calls.append(argv[0])
+            if argv[0] == "networksetup":
+                return 0, "Current Wi-Fi Network: HomeNet\n", ""
+            return 0, "<dictionary> {\n  BSSID : aa:bb:cc:dd:ee:ff\n}\n", ""
+
+        saved = darwin.run_cmd
+        darwin.run_cmd = fake_run
+        try:
+            out = darwin._unredact(dict(link))
+        finally:
+            darwin.run_cmd = saved
+        self.assertEqual(out["ssid"], "HomeNet")
+        self.assertEqual(out["bssid"], "aa:bb:cc:dd:ee:ff")
+        self.assertFalse(out["redacted"])
+        self.assertEqual(calls, ["networksetup", "scutil"])
+
+    def test_unrecoverable_name_stays_flagged(self):
+        def fake_run(argv, timeout=30, stdin=None):
+            return 1, "", "no"
+
+        saved = darwin.run_cmd
+        darwin.run_cmd = fake_run
+        try:
+            out = darwin._unredact({"interface": "en0", "ssid": "", "redacted": True})
+        finally:
+            darwin.run_cmd = saved
+        self.assertTrue(out["redacted"])
+
     def test_no_wifi_data_is_not_a_crash(self):
         self.assertEqual(darwin.parse_airport_json(json.dumps({"SPAirPortDataType": []})), [])
         self.assertFalse(darwin.parse_airport_current(json.dumps({}))["connected"])

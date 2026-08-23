@@ -243,6 +243,23 @@ class TestAnalysis(unittest.TestCase):
         levels = [lvl for lvl, _ in report["findings"]]
         self.assertIn("critical", levels)
 
+    def test_hidden_names_are_explained_not_silently_blank(self):
+        report = wifi.analyze(self.nets, dict(self.current, redacted=True))
+        self.assertTrue(report["redacted"])
+        text = " ".join(msg for _lvl, msg in report["findings"])
+        self.assertIn("Location Services", text)
+
+    def test_hidden_neighbour_names_alone_raise_the_hint(self):
+        nets = [dict(n, ssid="", redacted=True) for n in self.nets]
+        report = wifi.analyze(nets, {"signal_dbm": -50, "channel": 6, "band": "2.4"})
+        self.assertTrue(report["redacted"])
+
+    def test_no_hint_when_nothing_was_blanked(self):
+        report = wifi.analyze(self.nets, self.current, self.survey)
+        self.assertFalse(report["redacted"])
+        text = " ".join(msg for _lvl, msg in report["findings"])
+        self.assertNotIn("Location Services", text)
+
     def test_clean_report_when_nothing_wrong(self):
         report = wifi.analyze([], {})
         self.assertEqual(report["findings"][0][0], "ok")

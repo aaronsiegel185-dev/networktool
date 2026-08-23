@@ -603,6 +603,20 @@ def cmd_mirror(args):
 
 # --- wifi ------------------------------------------------------------------
 
+def _ssid_label(net):
+    """A network's name, or why we do not have one."""
+    if net.get("ssid"):
+        return net["ssid"]
+    return "(hidden by macOS)" if net.get("redacted") else "(hidden)"
+
+
+def _hidden_names_note(networks, current=None):
+    """Explain blanked names once, if anything in this result was blanked."""
+    if not (current or {}).get("redacted") and not any(n.get("redacted") for n in networks):
+        return
+    sys.stdout.write("\nnote: %s\n" % wifimod.HIDDEN_NAMES_HINT)
+
+
 def _wifi_scan_rows(networks, sort_by):
     if sort_by == "signal":
         networks = sorted(networks, key=lambda n: n["signal_dbm"] or -999, reverse=True)
@@ -613,7 +627,7 @@ def _wifi_scan_rows(networks, sort_by):
     rows = []
     for n in networks:
         rows.append([
-            n.get("ssid") or "(hidden)", n.get("bssid", ""), n.get("band", ""),
+            _ssid_label(n), n.get("bssid", ""), n.get("band", ""),
             n.get("channel", ""), "%.0f" % n["signal_dbm"] if n.get("signal_dbm") is not None else "",
             n.get("quality_pct", ""), n.get("rating", ""),
             "%d" % n["width_mhz"] if n.get("width_mhz") else "",
@@ -633,6 +647,7 @@ def cmd_wifi_scan(args):
     table(_wifi_scan_rows(networks, args.sort),
           ["ssid", "bssid", "band", "ch", "dBm", "qual%", "rating", "width",
            "util", "sta", "std", "security"])
+    _hidden_names_note(networks)
     return 0
 
 
@@ -646,8 +661,9 @@ def cmd_wifi_link(args):
         return 1
     section("association on %s" % state["interface"])
     rows = [
-        ["ssid", state.get("ssid", "")],
-        ["bssid", state.get("bssid", "")],
+        ["ssid", _ssid_label(state)],
+        ["bssid", state.get("bssid", "") or ("(hidden by macOS)"
+                                             if state.get("redacted") else "")],
         ["band / channel", "%s GHz / %s" % (state.get("band", "?"), state.get("channel", "?"))],
         ["frequency", "%s MHz" % state.get("freq", "?")],
         ["signal", "%s dBm (%s, %s%%)" % (state.get("signal_dbm"), state.get("rating"),
@@ -671,6 +687,7 @@ def cmd_wifi_link(args):
         rows += [["missed beacons", proc.get("missed_beacons")],
                  ["rx crypt errors", proc.get("rx_invalid_crypt")]]
     table(rows, ["field", "value"])
+    _hidden_names_note([], state)
     return 0
 
 
@@ -766,7 +783,7 @@ def cmd_wifi_analyze(args):
     if current.get("connected"):
         section("your link")
         sys.stdout.write("  %s on ch %s, %s dBm (%s)%s\n" % (
-            current.get("ssid"), current.get("channel"), current.get("signal_dbm"),
+            _ssid_label(current), current.get("channel"), current.get("signal_dbm"),
             current.get("rating"),
             ", SNR %s dB" % current["snr_db"] if current.get("snr_db") else ""))
     section("findings")

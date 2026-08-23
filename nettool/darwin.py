@@ -416,6 +416,18 @@ def _security_label(raw):
     return lookup.get(text.lower(), [text])
 
 
+def is_redacted(*values):
+    """True if macOS blanked a Wi-Fi name.
+
+    Since Sonoma, a process without Location Services permission is handed
+    "<redacted>" in place of the SSID and BSSID - by both wdutil and
+    system_profiler. It is not an error, and the radio numbers alongside it are
+    still real, so we blank the name and say why rather than printing the
+    placeholder.
+    """
+    return any("redacted" in str(value).lower() for value in values)
+
+
 def _walk_networks(node, found):
     """system_profiler's schema moves between releases; find the network dicts anywhere."""
     if isinstance(node, dict):
@@ -445,10 +457,13 @@ def parse_airport_json(payload):
         if key in seen:
             continue
         seen.add(key)
+        bssid = entry.get("spairport_network_bssid", "")
+        # Dedup on the name macOS gave us, but never show the placeholder itself.
+        redacted = is_redacted(name, bssid)
         networks.append({
-            "ssid": name,
+            "ssid": "" if redacted else name,
             # macOS does not expose neighbouring BSSIDs without extra entitlements.
-            "bssid": entry.get("spairport_network_bssid", ""),
+            "bssid": "" if redacted else bssid,
             "channel": channel,
             "band": band,
             "freq": None,
@@ -460,6 +475,7 @@ def parse_airport_json(payload):
             "standards": _phy_modes(entry.get("spairport_network_phymode", "")),
             "security": _security_label(entry.get("spairport_security_mode", "")),
             "associated": False,
+            "redacted": redacted,
         })
     return networks
 
@@ -498,7 +514,7 @@ def parse_wdutil(text):
 
     ssid = info.get("ssid", "")
     bssid = info.get("bssid", "")
-    redacted = "redacted" in ssid.lower() or "redacted" in bssid.lower()
+    redacted = is_redacted(ssid, bssid)
     channel, band, width = parse_channel_spec(info.get("channel", ""))
     signal = num("rssi")
     noise = num("noise")
@@ -547,11 +563,14 @@ def parse_airport_current(payload):
     channel, band, width = parse_channel_spec(current.get("spairport_network_channel", ""))
     signal, noise = parse_signal_noise(current.get("spairport_signal_noise", ""))
     rate = current.get("spairport_network_rate")
+    ssid = current.get("_name", "")
+    bssid = current.get("spairport_network_bssid", "")
+    redacted = is_redacted(ssid, bssid)
     return {
         "interface": iface,
         "connected": True,
-        "ssid": current.get("_name", ""),
-        "bssid": current.get("spairport_network_bssid", ""),
+        "ssid": "" if redacted else ssid,
+        "bssid": "" if redacted else bssid,
         "channel": channel,
         "band": band,
         "width_mhz": width,
@@ -561,7 +580,7 @@ def parse_airport_current(payload):
         "snr_db": round(signal - noise, 1) if signal is not None and noise is not None else None,
         "tx_bitrate": "%s Mbit/s" % rate if rate else "",
         "security": " ".join(_security_label(current.get("spairport_security_mode", ""))),
-        "redacted": False,
+        "redacted": redacted,
     }
 
 
@@ -585,6 +604,19 @@ def wifi_scan():
             net["associated"] = True
             if net["signal_dbm"] is None:
                 net["signal_dbm"] = current.get("signal_dbm")
+    blanked = current.get("redacted") or any(n.get("redacted") for n in networks)
+    same_channel = [n for n in networks
+                    if current.get("channel") and n["channel"] == current["channel"]]
+    if blanked and len(same_channel) == 1 and not any(n["associated"] for n in networks):
+        # macOS hid the names, so the channel is the only handle we have left.
+        ours = same_channel[0]
+        ours["associated"] = True
+        if ours["signal_dbm"] is None:
+            ours["signal_dbm"] = current.get("signal_dbm")
+        if not ours["ssid"] and current.get("ssid"):
+            # We recovered our own name; the neighbours' stay hidden.
+            ours["ssid"] = current["ssid"]
+            ours["redacted"] = False
     if current.get("connected") and not any(n["associated"] for n in networks):
         networks.insert(0, {
             "ssid": current.get("ssid", ""),
@@ -600,8 +632,80 @@ def wifi_scan():
             "standards": _phy_modes(current.get("phy_mode", "")),
             "security": [current.get("security", "")] if current.get("security") else [],
             "associated": True,
+            "redacted": current.get("redacted", False),
         })
     return networks, "system_profiler"
+
+
+def parse_networksetup_ssid(text):
+    """SSID out of `networksetup -getairportnetwork <iface>`.
+
+    This reads the interface's own configuration rather than scanning the air,
+    so macOS does not gate it on Location Services.
+    """
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        label, value = line.split(":", 1)
+        if "current" in label.lower() and "network" in label.lower():
+            name = value.strip()
+            return "" if is_redacted(name) else name
+    return ""
+
+
+def parse_scutil_airport(text):
+    """SSID_STR and BSSID out of a `scutil` AirPort dictionary."""
+    info = {"ssid": "", "bssid": ""}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip().upper()
+        value = value.strip()
+        if key == "SSID_STR" and not is_redacted(value):
+            info["ssid"] = value
+        elif key == "BSSID" and not is_redacted(value):
+            info["bssid"] = value.lower()
+    return info
+
+
+def recover_hidden_names(ifname):
+    """Names macOS blanked, read back from sources it does not redact.
+
+    `wdutil` and `system_profiler` hand "<redacted>" to a process without the
+    Location Services permission. The interface's stored configuration and the
+    SystemConfiguration store still hold the real name, so ask them instead of
+    making the user go change a privacy setting. BSSID needs root even here.
+    """
+    names = {"ssid": "", "bssid": ""}
+    if not ifname:
+        return names
+    rc, out, _err = run_cmd(["networksetup", "-getairportnetwork", ifname], timeout=15)
+    if rc == 0:
+        names["ssid"] = parse_networksetup_ssid(out)
+    rc, out, _err = run_cmd(
+        ["scutil"], timeout=15,
+        stdin="show State:/Network/Interface/%s/AirPort\n" % ifname)
+    if rc == 0:
+        found = parse_scutil_airport(out)
+        names["ssid"] = names["ssid"] or found["ssid"]
+        names["bssid"] = found["bssid"]
+    return names
+
+
+def _unredact(link):
+    """Fill a blanked name back in, and say where it came from."""
+    if not link.get("redacted"):
+        return link
+    names = recover_hidden_names(link.get("interface", ""))
+    if names["ssid"]:
+        link["ssid"] = names["ssid"]
+    if names["bssid"]:
+        link["bssid"] = names["bssid"]
+    # Still redacted only if we could not recover the name after all.
+    link["redacted"] = not link.get("ssid")
+    return link
 
 
 def wifi_link(quiet=False):
@@ -611,13 +715,13 @@ def wifi_link(quiet=False):
     rc, out, _err = run_cmd(["wdutil", "info"], timeout=30)
     if rc == 0 and "WIFI" in out.upper():
         link = parse_wdutil(out)
-        if link.get("signal_dbm") is not None or link.get("ssid"):
+        if link.get("signal_dbm") is not None or link.get("ssid") or link.get("redacted"):
             link["source"] = "wdutil"
-            return link
+            return _unredact(link)
     try:
         link = parse_airport_current(_system_profiler_wifi())
         link["source"] = "system_profiler"
-        return link
+        return _unredact(link)
     except NetToolError:
         if quiet:
             return {"connected": False}

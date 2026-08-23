@@ -79,8 +79,14 @@ sudo ./gui/macos/install-bpf-access.sh     # then log out and back in
 Two macOS-specific caveats worth knowing:
 
 * **Network names are gated behind Location Services.** Without that permission macOS
-  redacts the SSID and BSSID; signal, noise, channel, security and the whole
-  interference analysis still work. `wdutil info` also needs root to show them.
+  hands `<redacted>` to `wdutil` and `system_profiler` in place of every SSID and
+  BSSID. nettool reads your own network's name back from `networksetup
+  -getairportnetwork` and the SystemConfiguration store, which are not gated, so
+  the link you are on is named either way. Neighbouring names stay blank - shown as
+  `(hidden by macOS)`, to distinguish them from an AP that really is hiding its
+  SSID - until you turn nettool (or Terminal) on under System Settings > Privacy &
+  Security > Location Services. Signal, noise, channel, security and the whole
+  interference analysis are unaffected.
 * **No airtime survey.** The "60% of airtime is undecodable" line that Linux gets from
   `iw survey` has no macOS equivalent, so the interference verdict there is based on
   neighbour count, overlap, signal and SNR.
