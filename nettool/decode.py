@@ -8,6 +8,7 @@ ETH_P_ARP = 0x0806
 ETH_P_IPV6 = 0x86DD
 ETH_P_VLAN = 0x8100
 ETH_P_QINQ = 0x88A8
+ETH_P_QINQ_LEGACY = 0x9100
 ETH_P_LLDP = 0x88CC
 ETH_P_EAPOL = 0x888E
 ETH_P_PPPOE_DISC = 0x8863
@@ -18,7 +19,7 @@ ETH_P_LOOP = 0x9000
 
 ETHERTYPE_NAMES = {
     ETH_P_IP: "IPv4", ETH_P_ARP: "ARP", ETH_P_IPV6: "IPv6", ETH_P_VLAN: "802.1Q",
-    ETH_P_QINQ: "802.1ad", ETH_P_LLDP: "LLDP", ETH_P_EAPOL: "EAPOL",
+    ETH_P_QINQ: "802.1ad", ETH_P_QINQ_LEGACY: "QinQ", ETH_P_LLDP: "LLDP", ETH_P_EAPOL: "EAPOL",
     ETH_P_PPPOE_DISC: "PPPoE-Disc", ETH_P_PPPOE_SESS: "PPPoE", ETH_P_MPLS: "MPLS",
     ETH_P_PROFINET: "PROFINET", ETH_P_LOOP: "Loopback/CDP-keepalive", 0x8035: "RARP",
     0x88E5: "MACsec", 0x8906: "FCoE", 0x22EA: "SRP", 0x88F7: "PTP",
@@ -48,10 +49,14 @@ def decode(data):
     pkt["eth_src"] = _mac(data[6:12])
     etype = struct.unpack("!H", data[12:14])[0]
     off = 14
-    while etype in (ETH_P_VLAN, ETH_P_QINQ) and len(data) >= off + 4:
+    while etype in (ETH_P_VLAN, ETH_P_QINQ, ETH_P_QINQ_LEGACY) and len(data) >= off + 4:
         tci = struct.unpack("!H", data[off:off + 2])[0]
-        pkt["vlan"] = tci & 0x0FFF
+        vlan = tci & 0x0FFF
+        pkt["vlan"] = vlan                      # innermost tag: the one traffic rides on
         pkt["pcp"] = (tci >> 13) & 0x7
+        pkt["dei"] = bool((tci >> 12) & 0x1)
+        pkt.setdefault("outer_vlan", vlan)      # first tag seen: the QinQ service tag
+        pkt.setdefault("vlan_stack", []).append(vlan)
         etype = struct.unpack("!H", data[off + 2:off + 4])[0]
         off += 4
     pkt["ethertype"] = etype

@@ -392,6 +392,135 @@ impl CaptureReport {
     }
 }
 
+// --- mirror ----------------------------------------------------------------
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct MirrorHost {
+    #[serde(default)]
+    pub ip: String,
+    #[serde(default)]
+    pub mac: String,
+    #[serde(default)]
+    pub vendor: String,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct VlanReport {
+    /// `None` is the untagged bucket.
+    #[serde(default)]
+    pub vlan: Option<i64>,
+    #[serde(default)]
+    pub packets: u64,
+    #[serde(default)]
+    pub bytes: u64,
+    #[serde(default)]
+    pub duration: f64,
+    #[serde(default)]
+    pub broadcast: u64,
+    #[serde(default)]
+    pub multicast: u64,
+    #[serde(default)]
+    pub unique_macs: u64,
+    #[serde(default)]
+    pub unique_hosts: u64,
+    #[serde(default)]
+    pub hosts: Vec<MirrorHost>,
+    #[serde(default)]
+    pub top_talkers: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub conversations: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub protocols: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub services: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub dhcp_servers: Vec<String>,
+    #[serde(default)]
+    pub routers: Vec<String>,
+}
+
+impl VlanReport {
+    pub fn label(&self) -> String {
+        match self.vlan {
+            Some(vlan) => format!("VLAN {vlan}"),
+            None => "untagged".to_string(),
+        }
+    }
+
+    pub fn broadcast_pct(&self) -> f64 {
+        if self.packets == 0 {
+            0.0
+        } else {
+            100.0 * self.broadcast as f64 / self.packets as f64
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct MirrorFile {
+    #[serde(default)]
+    pub file: String,
+    #[serde(default)]
+    pub packets: u64,
+    #[serde(default)]
+    pub bytes: u64,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct MirrorReport {
+    #[serde(default)]
+    pub packets: u64,
+    #[serde(default)]
+    pub bytes: u64,
+    #[serde(default)]
+    pub duration: f64,
+    #[serde(default)]
+    pub tagged: u64,
+    #[serde(default)]
+    pub untagged: u64,
+    #[serde(default)]
+    pub qinq: u64,
+    #[serde(default)]
+    pub own_traffic: u64,
+    #[serde(default)]
+    pub foreign_traffic: u64,
+    #[serde(default)]
+    pub bidirectional_share: Option<f64>,
+    #[serde(default)]
+    pub kernel_dropped: u64,
+    #[serde(default)]
+    pub kernel_filtered: bool,
+    #[serde(default)]
+    pub interface: String,
+    #[serde(default)]
+    pub vlans: Vec<VlanReport>,
+    #[serde(default)]
+    pub files: Vec<MirrorFile>,
+    /// `[severity, message]` pairs.
+    #[serde(default)]
+    pub findings: Vec<(String, String)>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct MirrorPlan {
+    #[serde(default)]
+    pub vendor: String,
+    #[serde(default)]
+    pub switch: String,
+    #[serde(default)]
+    pub management_ip: String,
+    #[serde(default)]
+    pub destination_port: String,
+    #[serde(default)]
+    pub source_vlan: Option<i64>,
+    #[serde(default)]
+    pub source_port: Option<String>,
+    #[serde(default)]
+    pub native_vlan: Option<i64>,
+    #[serde(default)]
+    pub config: String,
+}
+
 // --- ping ------------------------------------------------------------------
 
 #[derive(Debug, Default, Clone, Deserialize)]

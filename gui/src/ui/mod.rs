@@ -2,6 +2,7 @@
 
 pub mod capture;
 pub mod discover;
+pub mod mirror;
 pub mod lldp;
 pub mod overview;
 pub mod scan;
@@ -20,16 +21,18 @@ pub enum Tab {
     Scan,
     Lldp,
     Capture,
+    Mirror,
     Wifi,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 6] = [
+    pub const ALL: [Tab; 7] = [
         Tab::Overview,
         Tab::Discover,
         Tab::Scan,
         Tab::Lldp,
         Tab::Capture,
+        Tab::Mirror,
         Tab::Wifi,
     ];
 
@@ -40,6 +43,7 @@ impl Tab {
             Tab::Scan => "Port scan",
             Tab::Lldp => "LLDP / CDP",
             Tab::Capture => "Capture",
+            Tab::Mirror => "Mirror / VLAN",
             Tab::Wifi => "Wi-Fi",
         }
     }

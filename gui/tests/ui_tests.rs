@@ -75,7 +75,8 @@ fn summarises_signal_history() {
 
 #[test]
 fn every_tab_has_a_title() {
-    assert_eq!(Tab::ALL.len(), 6);
+    // Overview, Discover, Scan, LLDP, Capture, Mirror, Wi-Fi
+    assert_eq!(Tab::ALL.len(), 7);
     for tab in Tab::ALL {
         assert!(!tab.title().is_empty());
     }

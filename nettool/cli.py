@@ -9,9 +9,11 @@ import time
 from . import __version__
 from . import capture as capmod
 from . import diag as diagmod
+from . import dot11
 from . import discover as discmod
 from . import iface as ifmod
 from . import lldp as lldpmod
+from . import mirror as mirrormod
 from . import ping as pingmod
 from . import portscan
 from . import wifi as wifimod
@@ -207,7 +209,15 @@ def cmd_capture(args):
         ifname=args.interface, count=args.count, duration=args.duration,
         snaplen=args.snaplen, outfile=args.write, filter_expr=args.filter,
         promisc=not args.no_promisc, show=not args.quiet and not args.write_only,
-        quiet=args.json)
+        quiet=args.json, monitor=args.monitor)
+    if getattr(stats, "wireless", False):
+        report = stats.survey.report()
+        report["file"] = args.write
+        if args.json:
+            _emit_json(report)
+            return 0
+        render_wireless(report)
+        return 0
     if args.json:
         _emit_json({
             "packets": stats.packets, "bytes": stats.bytes,
@@ -224,6 +234,14 @@ def cmd_capture(args):
 def cmd_pcap(args):
     stats = capmod.read_pcap(args.file, filter_expr=args.filter, show=args.print_packets,
                              limit=args.limit, outfile=args.write)
+    if isinstance(stats, dot11.Survey):
+        report = stats.report()
+        report["file"] = args.file
+        if args.json:
+            _emit_json(report)
+            return 0
+        render_wireless(report)
+        return 0
     if args.json:
         _emit_json({"file": args.file, "packets": stats.packets, "bytes": stats.bytes,
                     "protocols": dict(stats.protos),
@@ -232,6 +250,209 @@ def cmd_pcap(args):
         return 0
     stats.report()
     return 0
+
+
+def render_wireless(report, sink=None):
+    """Render a monitor-mode capture: who is on the air, and what is going wrong."""
+    sink = sink or sys.stdout
+    section("wireless capture summary")
+    table([["frames", report["frames"]],
+           ["duration", widgets_secs(report["duration"])],
+           ["retransmissions", "%.1f%%" % report["retry_pct"]],
+           ["failed checksums", report["bad_fcs"]],
+           ["access points", len(report["access_points"])],
+           ["clients", len(report["clients"])]],
+          ["field", "value"], sink)
+
+    if report["access_points"]:
+        section("access points")
+        table([[ap["ssid"] or "(hidden)", ap["bssid"], ap.get("band", ""), ap.get("channel", ""),
+                "" if ap["signal_dbm"] is None else "%.0f" % ap["signal_dbm"],
+                ap["beacons"],
+                "" if ap.get("utilization_pct") is None else "%.0f%%" % ap["utilization_pct"],
+                "" if ap.get("stations") is None else ap["stations"],
+                ",".join(ap.get("standards") or []),
+                ",".join(ap.get("security") or []),
+                ap.get("vendor", "")]
+               for ap in report["access_points"]],
+              ["ssid", "bssid", "band", "ch", "dBm", "beacons", "util", "sta", "std",
+               "security", "vendor"], sink)
+
+    if report["clients"]:
+        section("clients")
+        table([[client["mac"], client.get("vendor", ""), client["frames"],
+                "%.0f%%" % client["retry_pct"],
+                "" if client["signal_dbm"] is None else "%.0f" % client["signal_dbm"],
+                ", ".join(client["bssids"][:2]),
+                ", ".join(client["probes"][:3])]
+               for client in report["clients"][:25]],
+              ["mac", "vendor", "frames", "retry", "dBm", "bssid", "probing for"], sink)
+
+    if report["channels"]:
+        section("channels")
+        table([[channel, data["frames"], data["bssids"]]
+               for channel, data in sorted(report["channels"].items())],
+              ["ch", "frames", "bssids"], sink)
+
+    if report["deauths"]:
+        section("deauthentication / disassociation")
+        table([[entry["subtype"], entry["src"], entry["dst"], entry["reason"], entry["count"]]
+               for entry in report["deauths"]],
+              ["frame", "from", "to", "reason", "count"], sink)
+
+    if report["frame_types"]:
+        section("frame mix")
+        table([[name, count] for name, count in list(report["frame_types"].items())[:12]],
+              ["frame", "count"], sink)
+
+    section("findings")
+    for level, message in report["findings"]:
+        sink.write("  %s %s\n" % (SEV_MARK.get(level, "[    ]"), message))
+
+
+def widgets_secs(seconds):
+    if seconds < 60:
+        return "%.1f s" % seconds
+    return "%dm %02ds" % (int(seconds) // 60, int(seconds) % 60)
+
+
+# --- mirror ----------------------------------------------------------------
+
+def render_mirror(report, verbose=False, sink=None):
+    """Render a mirror capture: what is on each VLAN, and whether the mirror is sane."""
+    sink = sink or sys.stdout
+    section("mirror capture")
+    table([["frames", report["packets"]],
+           ["bytes", human_bytes(report["bytes"])],
+           ["duration", widgets_secs(report["duration"])],
+           ["tagged / untagged", "%d / %d" % (report["tagged"], report["untagged"])],
+           ["double-tagged (QinQ)", report["qinq"]],
+           ["from other devices", report["foreign_traffic"]],
+           ["this machine's own", report["own_traffic"]],
+           ["both directions seen",
+            "-" if report["bidirectional_share"] is None
+            else "%.0f%% of conversations" % (report["bidirectional_share"] * 100)],
+           ["dropped by kernel", report["kernel_dropped"]]],
+          ["field", "value"], sink)
+
+    if report["vlans"]:
+        section("VLANs")
+        rows = []
+        for vlan in report["vlans"]:
+            protocols = ", ".join(list(vlan["protocols"])[:3])
+            talker = next(iter(vlan["top_talkers"]), "")
+            rows.append([
+                "untagged" if vlan["vlan"] is None else vlan["vlan"],
+                vlan["packets"], human_bytes(vlan["bytes"]),
+                vlan["unique_hosts"], vlan["unique_macs"],
+                "%.0f%%" % (100.0 * vlan["broadcast"] / vlan["packets"])
+                if vlan["packets"] else "0%",
+                protocols, talker,
+                ", ".join(vlan["dhcp_servers"][:2]),
+            ])
+        table(rows, ["vlan", "frames", "bytes", "hosts", "macs", "bcast", "protocols",
+                     "top talker", "dhcp"], sink)
+
+    if verbose:
+        for vlan in report["vlans"]:
+            label = "untagged" if vlan["vlan"] is None else "VLAN %d" % vlan["vlan"]
+            section("%s - hosts" % label)
+            table([[host["ip"], host["mac"], host["vendor"]] for host in vlan["hosts"][:50]],
+                  ["ip", "mac", "vendor"], sink)
+            if vlan["conversations"]:
+                section("%s - conversations" % label)
+                table([[pair, human_bytes(count)]
+                       for pair, count in list(vlan["conversations"].items())[:10]],
+                      ["pair", "bytes"], sink)
+
+    if report.get("files"):
+        section("files written")
+        table([[entry["file"], entry["packets"], human_bytes(entry["bytes"])]
+               for entry in report["files"]], ["file", "packets", "bytes"], sink)
+
+    section("findings")
+    for level, message in report["findings"]:
+        sink.write("  %s %s\n" % (SEV_MARK.get(level, "[    ]"), message))
+
+
+def render_plan(plan, sink=None):
+    sink = sink or sys.stdout
+    section("mirror plan")
+    rows = [["switch", plan["switch"] or "(unknown - no LLDP/CDP neighbour)"],
+            ["platform", plan["vendor"]],
+            ["management ip", plan["management_ip"] or "-"],
+            ["mirror destination", plan["destination_port"] or "(this machine's port)"],
+            ["native vlan", plan["native_vlan"] if plan["native_vlan"] else "-"]]
+    if plan["source_vlan"]:
+        rows.append(["mirror source", "VLAN %s" % plan["source_vlan"]])
+    elif plan["source_port"]:
+        rows.append(["mirror source", plan["source_port"]])
+    table(rows, ["field", "value"], sink)
+    section("switch configuration")
+    sink.write(plan["config"] + "\n")
+    sink.write("\nReview this before pasting it: a mirror destination port stops "
+               "forwarding normal traffic.\n")
+
+
+def cmd_mirror(args):
+    if args.split and not args.write:
+        raise NetToolError("--split needs --write to name the per-VLAN files")
+    if args.rotate and not args.write:
+        raise NetToolError("--rotate needs --write to name the files")
+    vlans = []
+    if args.vlan:
+        for chunk in args.vlan:
+            for part in str(chunk).split(","):
+                part = part.strip()
+                if part:
+                    vlans.append(int(part))
+
+    if args.plan:
+        neighbor = {}
+        if not args.no_listen:
+            if not args.json:
+                sys.stdout.write("listening for LLDP/CDP to identify the switch "
+                                 "(up to %ds)...\n" % args.wait)
+            neighbors = lldpmod.listen(args.interface, timeout=args.wait, stop_after=1)
+            if neighbors:
+                neighbor = neighbors[0]
+            elif not args.json:
+                sys.stdout.write("no neighbour seen; falling back to a generic plan\n")
+        plan = mirrormod.plan(neighbor, source_vlan=vlans[0] if vlans else None,
+                              source_port=args.source_port, vendor=args.vendor,
+                              session=args.session)
+        if args.json:
+            _emit_json(plan)
+        else:
+            render_plan(plan)
+        return 0
+
+    if args.from_pcap:
+        survey = mirrormod.survey_pcap(args.from_pcap, vlans=vlans or None)
+        report = survey.report()
+        report["files"] = []
+    else:
+        duration = args.duration
+        if args.check and not duration:
+            duration = 10
+        survey = mirrormod.capture(
+            ifname=args.interface, vlans=vlans or None, duration=duration,
+            count=args.count, snaplen=args.snaplen, outfile=args.write,
+            split=args.split, include_untagged=args.untagged, rotate_mb=args.rotate,
+            show=args.print_packets, quiet=args.json)
+        report = survey.report()
+        report["files"] = getattr(survey, "files", [])
+        report["interface"] = getattr(survey, "interface", "")
+        report["kernel_filtered"] = getattr(survey, "kernel_filtered", False)
+
+    if args.json:
+        _emit_json(report)
+    else:
+        render_mirror(report, verbose=args.verbose)
+    worst = max((level for level, _ in report["findings"]),
+                key=lambda level: {"ok": 0, "info": 1, "warn": 2, "critical": 3}.get(level, 0),
+                default="ok")
+    return 1 if worst == "critical" else 0
 
 
 # --- wifi ------------------------------------------------------------------
@@ -544,7 +765,47 @@ def build_parser():
                    help="write to file without printing packets")
     p.add_argument("--no-promisc", action="store_true",
                    help="do not put the interface in promiscuous mode")
+    p.add_argument("-M", "--monitor", action="store_true",
+                   help="capture 802.11 frames off the air (macOS: switches the Wi-Fi "
+                        "radio to monitor mode and drops the association)")
     p.set_defaults(func=cmd_capture)
+
+    p = add_json(sub.add_parser(
+        "mirror", help="capture from a switch port mirror (SPAN) and report per VLAN"))
+    p.add_argument("-i", "--interface", help="the interface plugged into the mirror port")
+    p.add_argument("--vlan", action="append",
+                   help="only this VLAN (repeatable, or 10,20,30) - filtered in the kernel")
+    p.add_argument("--untagged", action="store_true",
+                   help="also keep untagged frames when --vlan is used")
+    p.add_argument("-d", "--duration", type=float, default=0, help="stop after N seconds")
+    p.add_argument("-c", "--count", type=int, default=0, help="stop after N frames")
+    p.add_argument("-s", "--snaplen", type=int, default=65535)
+    p.add_argument("-w", "--write", metavar="FILE", help="write the frames to a pcap")
+    p.add_argument("--split", action="store_true",
+                   help="write one pcap per VLAN instead of a single file, named after "
+                        "--write (span.pcap -> span-vlan30.pcap, span-vlan40.pcap, ...)")
+    p.add_argument("--rotate", type=float, default=0, metavar="MB",
+                   help="start a new file every MB megabytes")
+    p.add_argument("-P", "--print", dest="print_packets", action="store_true",
+                   help="print a line per frame")
+    p.add_argument("-v", "--verbose", action="store_true",
+                   help="list the hosts and conversations on each VLAN")
+    p.add_argument("--check", action="store_true",
+                   help="short capture that only answers \"is this mirror working?\"")
+    p.add_argument("--from-pcap", metavar="FILE",
+                   help="analyse a mirror capture that was taken earlier")
+    p.add_argument("--plan", action="store_true",
+                   help="print the switch commands that set up the mirror")
+    p.add_argument("--vendor", help="switch platform for --plan (cisco-ios, cisco-nxos, "
+                                    "aruba-cx, aruba-procurve, juniper, mikrotik, "
+                                    "ubiquiti, extreme)")
+    p.add_argument("--source-port", help="the switch port to mirror, for --plan")
+    p.add_argument("--session", type=int, default=1, help="mirror session number for --plan")
+    p.add_argument("--wait", type=int, default=65,
+                   help="how long --plan listens for LLDP/CDP")
+    p.add_argument("--no-listen", action="store_true",
+                   help="skip the LLDP listen in --plan")
+    p.set_defaults(func=cmd_mirror)
 
     p = add_json(sub.add_parser("pcap", help="inspect, filter or split an existing pcap"))
     p.add_argument("file")

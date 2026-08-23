@@ -6,8 +6,8 @@ use crate::model::IfaceReport;
 use crate::runner::{args, Job, Settings};
 use crate::ui::widgets;
 use crate::ui::{
-    capture::CaptureTab, discover::DiscoverTab, lldp::LldpTab, overview::OverviewTab,
-    scan::ScanTab, wifi::View as WifiView, wifi::WifiTab, Action, Tab,
+    capture::CaptureTab, discover::DiscoverTab, lldp::LldpTab, mirror::MirrorTab,
+    overview::OverviewTab, scan::ScanTab, wifi::View as WifiView, wifi::WifiTab, Action, Tab,
 };
 
 /// What the window should show when it opens.
@@ -34,6 +34,7 @@ pub struct App {
     scan: ScanTab,
     lldp: LldpTab,
     capture: CaptureTab,
+    mirror: MirrorTab,
     wifi: WifiTab,
     base_command: String,
     /// Dev/documentation aid: capture the window to a PNG after a few frames.
@@ -66,6 +67,7 @@ impl App {
             scan: ScanTab::default(),
             lldp: LldpTab::default(),
             capture: CaptureTab::default(),
+            mirror: MirrorTab::default(),
             wifi,
             base_command,
             screenshot: startup.screenshot.map(|(path, delay)| ScreenshotJob {
@@ -92,6 +94,7 @@ impl App {
             Tab::Scan => self.scan.autorun(&settings),
             Tab::Lldp => self.lldp.autorun(&settings),
             Tab::Capture => self.capture.autorun(&settings),
+            Tab::Mirror => self.mirror.autorun(&settings),
             Tab::Wifi => self.wifi.autorun(&settings),
         }
     }
@@ -128,6 +131,7 @@ impl App {
         changed |= self.scan.tick();
         changed |= self.lldp.tick();
         changed |= self.capture.tick();
+        changed |= self.mirror.tick();
         changed |= self.wifi.tick();
         changed
     }
@@ -319,6 +323,7 @@ impl eframe::App for App {
                         Tab::Scan => self.scan.ui(ui, &settings, inventory),
                         Tab::Lldp => self.lldp.ui(ui, &settings, inventory),
                         Tab::Capture => self.capture.ui(ui, &settings, inventory),
+                        Tab::Mirror => self.mirror.ui(ui, &settings, inventory),
                         Tab::Wifi => self.wifi.ui(ui, &settings, inventory),
                     })
                     .inner

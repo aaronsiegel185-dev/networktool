@@ -227,6 +227,52 @@ fn parses_wifi_analysis_including_integer_keyed_maps() {
 }
 
 #[test]
+fn parses_mirror_report() {
+    let report: MirrorReport = load("mirror.json");
+    assert!(report.packets > 0);
+    assert!(report.tagged > 0);
+    assert!(!report.vlans.is_empty());
+
+    let tagged: Vec<&VlanReport> = report.vlans.iter().filter(|v| v.vlan.is_some()).collect();
+    assert!(!tagged.is_empty(), "the fixture has VLAN-tagged traffic");
+    let first = tagged[0];
+    assert!(first.packets > 0);
+    assert!(first.unique_hosts > 0);
+    assert!(first.label().starts_with("VLAN "));
+    assert!(first.hosts.iter().all(|h| !h.ip.is_empty() && !h.mac.is_empty()));
+
+    // The untagged bucket is reported with a null vlan, and must not be dropped.
+    let untagged = report.vlans.iter().find(|v| v.vlan.is_none());
+    if let Some(untagged) = untagged {
+        assert_eq!(untagged.label(), "untagged");
+    }
+    assert!(!report.findings.is_empty());
+    assert!(report
+        .findings
+        .iter()
+        .all(|(severity, message)| !severity.is_empty() && !message.is_empty()));
+}
+
+#[test]
+fn broadcast_share_is_derived_not_parsed() {
+    let vlan = VlanReport {
+        packets: 200,
+        broadcast: 50,
+        ..Default::default()
+    };
+    assert!((vlan.broadcast_pct() - 25.0).abs() < 0.001);
+    assert_eq!(VlanReport::default().broadcast_pct(), 0.0);
+}
+
+#[test]
+fn parses_mirror_plan() {
+    let plan: MirrorPlan = load("mirror_plan.json");
+    assert_eq!(plan.vendor, "cisco-ios");
+    assert!(plan.config.contains("monitor session"));
+    assert_eq!(plan.source_vlan, Some(30));
+}
+
+#[test]
 fn tolerates_missing_and_unknown_fields() {
     let minimal: WifiLink = serde_json::from_str(r#"{"connected": false}"#).unwrap();
     assert!(!minimal.connected);

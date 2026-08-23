@@ -1,0 +1,10 @@
+{
+  "vendor": "cisco-ios",
+  "switch": "",
+  "management_ip": "",
+  "destination_port": "",
+  "source_vlan": 30,
+  "source_port": null,
+  "native_vlan": null,
+  "config": "! Cisco IOS / IOS-XE\nconfigure terminal\nmonitor session 1 source vlan 30 both\nmonitor session 1 destination interface <the port this machine is plugged into> encapsulation dot1q ingress\nend\n! check it with: show monitor session 1\n! remove it with: configure terminal ; no monitor session 1"
+}

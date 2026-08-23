@@ -21,6 +21,7 @@ import struct
 import sys
 import time
 
+from . import bpfprog
 from .util import NetToolError, require_root
 
 IS_LINUX = sys.platform.startswith("linux")
@@ -35,8 +36,28 @@ SOL_PACKET = 263
 PACKET_ADD_MEMBERSHIP = 1
 PACKET_MR_PROMISC = 1
 PACKET_STATISTICS = 6
+PACKET_AUXDATA = 8
 SO_TIMESTAMPNS = 35
 SCM_TIMESTAMPNS = 35
+SO_ATTACH_FILTER = 26
+SO_DETACH_FILTER = 27
+
+# struct tpacket_auxdata
+TPACKET_AUXDATA = struct.Struct("=IIIHHHH")
+TP_STATUS_VLAN_VALID = 1 << 4
+TP_STATUS_VLAN_TPID_VALID = 1 << 6
+
+
+def reinsert_vlan_tag(data, tci, tpid=0x8100):
+    """Put a VLAN tag back into a frame the kernel stripped.
+
+    Linux hands VLAN-tagged frames to AF_PACKET with the tag removed and the id
+    delivered out of band, so a mirror capture would otherwise show no tags at all.
+    This is what tcpdump does before writing the packet to a file.
+    """
+    if len(data) < 12:
+        return data
+    return data[:12] + struct.pack("!HH", tpid, tci & 0xFFFF) + data[12:]
 
 # --- macOS ------------------------------------------------------------------
 
@@ -64,6 +85,11 @@ BIOCGSTATS = _ioc(IOC_OUT, "B", 111, 8)         # struct bpf_stat
 BIOCIMMEDIATE = _ioc(IOC_IN, "B", 112, 4)
 BIOCSHDRCMPLT = _ioc(IOC_IN, "B", 117, 4)
 BIOCSSEESENT = _ioc(IOC_IN, "B", 119, 4)
+BIOCSDLT = _ioc(IOC_IN, "B", 120, 4)
+BIOCGDLTLIST = _ioc(IOC_INOUT, "B", 121, 16)    # struct bpf_dltlist
+
+DLT_IEEE802_11 = 105
+DLT_IEEE802_11_RADIOTAP = 127
 
 # struct bpf_hdr { struct timeval32 bh_tstamp; u_int32 bh_caplen, bh_datalen;
 #                  u_short bh_hdrlen; }
@@ -123,6 +149,35 @@ def attach_bpf(fd, ifname, buffer_size=BPF_DEFAULT_BUFFER, ioctl_fn=None):
         return size
 
 
+def bpf_dlt_list(fd, ioctl_fn=None):
+    """Every link type this BPF descriptor can be switched to.
+
+    macOS advertises DLT_IEEE802_11_RADIOTAP on a Wi-Fi interface, and selecting it is
+    what puts the radio into monitor mode.
+    """
+    import ctypes
+    import fcntl
+
+    ioctl_fn = ioctl_fn or fcntl.ioctl
+    # First call with a null list to learn how many entries there are.
+    request = bytearray(struct.pack("@IP", 0, 0))
+    try:
+        ioctl_fn(fd, BIOCGDLTLIST, request, True)
+    except OSError:
+        return []
+    count = struct.unpack("@IP", bytes(request))[0]
+    if not count or count > 256:
+        return []
+    buffer = ctypes.create_string_buffer(count * 4)
+    request = bytearray(struct.pack("@IP", count, ctypes.addressof(buffer)))
+    try:
+        ioctl_fn(fd, BIOCGDLTLIST, request, True)
+    except OSError:
+        return []
+    count = struct.unpack("@IP", bytes(request))[0]
+    return list(struct.unpack("<%dI" % count, buffer.raw[:count * 4]))
+
+
 def bpf_snaplen_program(snaplen):
     """A one-instruction BPF filter that accepts every packet, truncated to `snaplen`.
 
@@ -173,6 +228,10 @@ class LinkSocket(object):
     def write(self, frame):
         raise NotImplementedError
 
+    def set_filter(self, program):
+        """Attach a kernel filter. Returns False when the platform cannot."""
+        return False
+
     def stats(self):
         return None, None
 
@@ -204,6 +263,13 @@ class PacketSocket(LinkSocket):
                 self._sock.setsockopt(socket.SOL_SOCKET, option, value)
             except OSError:
                 pass
+        # Ask for the VLAN id of frames whose tag the kernel has stripped.
+        self._auxdata = False
+        try:
+            self._sock.setsockopt(SOL_PACKET, PACKET_AUXDATA, 1)
+            self._auxdata = True
+        except OSError:
+            pass
         if promisc:
             from . import iface as ifmod
 
@@ -216,9 +282,9 @@ class PacketSocket(LinkSocket):
 
     def read(self, timeout=0.5):
         self._sock.settimeout(timeout)
+        control_size = socket.CMSG_SPACE(16) + socket.CMSG_SPACE(TPACKET_AUXDATA.size)
         try:
-            data, ancdata, _flags, _addr = self._sock.recvmsg(
-                self.snaplen, socket.CMSG_SPACE(16))
+            data, ancdata, _flags, _addr = self._sock.recvmsg(self.snaplen, control_size)
         except socket.timeout:
             return []
         except (AttributeError, OSError) as exc:
@@ -230,11 +296,37 @@ class PacketSocket(LinkSocket):
             if level == socket.SOL_SOCKET and ctype == SCM_TIMESTAMPNS and len(cdata) >= 16:
                 sec, nsec = struct.unpack("qq", cdata[:16])
                 timestamp = sec + nsec / 1e9
-                break
+            elif level == SOL_PACKET and ctype == PACKET_AUXDATA \
+                    and len(cdata) >= TPACKET_AUXDATA.size:
+                status, _len, _snaplen, _mac, _net, tci, tpid = TPACKET_AUXDATA.unpack(
+                    cdata[:TPACKET_AUXDATA.size])
+                if status & TP_STATUS_VLAN_VALID:
+                    if not status & TP_STATUS_VLAN_TPID_VALID or not tpid:
+                        tpid = 0x8100
+                    data = reinsert_vlan_tag(data, tci, tpid)
         return [(data, timestamp if timestamp is not None else time.time())]
 
     def write(self, frame):
         return self._sock.send(frame)
+
+    def set_filter(self, program):
+        """Attach a classic-BPF program so the kernel drops unwanted frames."""
+        import ctypes
+
+        if not program:
+            try:
+                self._sock.setsockopt(socket.SOL_SOCKET, SO_DETACH_FILTER,
+                                      struct.pack("I", 0))
+            except OSError:
+                pass
+            return False
+        instructions = ctypes.create_string_buffer(bpfprog.to_bytes(program))
+        fprog = struct.pack("@HP", len(program), ctypes.addressof(instructions))
+        try:
+            self._sock.setsockopt(socket.SOL_SOCKET, SO_ATTACH_FILTER, fprog)
+        except OSError as exc:
+            raise NetToolError("could not attach the capture filter: %s" % exc)
+        return True
 
     def stats(self):
         try:
@@ -253,11 +345,13 @@ class PacketSocket(LinkSocket):
 class BpfSocket(LinkSocket):
     """macOS / BSD /dev/bpf back end."""
 
-    def __init__(self, ifname, promisc=True, snaplen=65535, buffer_size=None):
+    def __init__(self, ifname, promisc=True, snaplen=65535, buffer_size=None,
+                 monitor=False):
         import fcntl
 
         self.ifname = ifname
         self.snaplen = snaplen
+        self.monitor = False
         self._fcntl = fcntl
         self._fd = self._open_device()
         step = "setup"
@@ -277,6 +371,9 @@ class BpfSocket(LinkSocket):
             os.close(self._fd)
             raise NetToolError("cannot capture on %s (%s): %s" % (ifname, step, exc))
 
+        if monitor:
+            self._enable_monitor()
+
         # Everything below is a refinement: warn, but keep the capture.
         try:
             fcntl.ioctl(self._fd, BIOCSSEESENT, struct.pack("I", 1))
@@ -284,9 +381,8 @@ class BpfSocket(LinkSocket):
             pass
         if snaplen and snaplen < 262144:
             try:
-                program, _instructions = bpf_snaplen_program(snaplen)
-                fcntl.ioctl(self._fd, BIOCSETF, program)
-            except (OSError, ValueError):
+                self.set_filter(bpfprog.snaplen_program(snaplen))
+            except (NetToolError, OSError, ValueError):
                 pass                      # capture full frames rather than none
         if promisc:
             try:
@@ -303,6 +399,28 @@ class BpfSocket(LinkSocket):
             fcntl.ioctl(self._fd, BIOCFLUSH)
         except OSError:
             pass
+
+    def _enable_monitor(self):
+        """Switch the descriptor to radiotap, which puts the Wi-Fi radio in monitor mode.
+
+        The association drops while this is active - that is the nature of monitor mode,
+        not a bug. The link comes back when the capture ends.
+        """
+        available = bpf_dlt_list(self._fd)
+        if DLT_IEEE802_11_RADIOTAP not in available:
+            raise NetToolError(
+                "%s cannot capture 802.11 frames (link types offered: %s). Monitor mode "
+                "needs the Wi-Fi interface itself - check the name with `nettool iface`."
+                % (self.ifname, ", ".join(str(d) for d in available) or "none"))
+        try:
+            self._fcntl.ioctl(self._fd, BIOCSDLT,
+                              struct.pack("I", DLT_IEEE802_11_RADIOTAP))
+        except OSError as exc:
+            raise NetToolError(
+                "could not put %s into monitor mode (BIOCSDLT): %s. Disconnecting from "
+                "Wi-Fi first sometimes helps." % (self.ifname, exc))
+        self.linktype = DLT_IEEE802_11_RADIOTAP
+        self.monitor = True
 
     def _open_device(self):
         last_error = None
@@ -337,6 +455,20 @@ class BpfSocket(LinkSocket):
     def write(self, frame):
         return os.write(self._fd, frame)
 
+    def set_filter(self, program):
+        """Attach a classic-BPF program with BIOCSETF."""
+        import ctypes
+
+        instructions = ctypes.create_string_buffer(
+            bpfprog.to_bytes(program or bpfprog.accept_all()))
+        request = struct.pack("@IP", len(program or bpfprog.accept_all()),
+                              ctypes.addressof(instructions))
+        try:
+            self._fcntl.ioctl(self._fd, BIOCSETF, request)
+        except OSError as exc:
+            raise NetToolError("could not attach the capture filter: %s" % exc)
+        return True
+
     def stats(self):
         try:
             buffer = bytearray(8)
@@ -353,15 +485,29 @@ class BpfSocket(LinkSocket):
             pass
 
 
-def open_link(ifname, promisc=True, snaplen=65535, buffer_size=None):
-    """Open a raw link-layer handle on `ifname` for the current platform."""
+def open_link(ifname, promisc=True, snaplen=65535, buffer_size=None, monitor=False):
+    """Open a raw link-layer handle on `ifname` for the current platform.
+
+    `monitor` requests 802.11 monitor mode, which is available on macOS by selecting the
+    radiotap link type. On Linux, create a monitor interface first
+    (`sudo iw dev wlan0 interface add mon0 type monitor && sudo ip link set mon0 up`)
+    and capture on that.
+    """
     if not (IS_LINUX or IS_DARWIN or "bsd" in sys.platform):
         raise NetToolError("raw packet capture is not implemented on %s" % sys.platform)
     if IS_LINUX:
         # AF_PACKET is root-only, so say so before the socket call fails obscurely.
         require_root("Packet capture")
+        if monitor:
+            raise NetToolError(
+                "Linux does not switch an interface into monitor mode from the capture "
+                "socket. Create a monitor interface first:\n"
+                "    sudo iw dev %s interface add mon0 type monitor\n"
+                "    sudo ip link set mon0 up\n"
+                "then capture on mon0." % ifname)
         return PacketSocket(ifname, promisc, snaplen, buffer_size or 4 * 1024 * 1024)
     # On macOS root is not required: opening /dev/bpf* succeeds for any user in the
     # access_bpf group (see macos/install-bpf-access.sh). Let the open attempt decide,
     # so people who installed the helper are not turned away here.
-    return BpfSocket(ifname, promisc, snaplen, buffer_size or BPF_DEFAULT_BUFFER)
+    return BpfSocket(ifname, promisc, snaplen, buffer_size or BPF_DEFAULT_BUFFER,
+                     monitor=monitor)

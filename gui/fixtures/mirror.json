@@ -1,0 +1,201 @@
+{
+  "packets": 766,
+  "bytes": 97500,
+  "duration": 4.98,
+  "tagged": 694,
+  "untagged": 72,
+  "qinq": 0,
+  "own_traffic": 72,
+  "foreign_traffic": 694,
+  "bidirectional_share": 0.73,
+  "kernel_dropped": 0,
+  "vlans": [
+    {
+      "vlan": 30,
+      "packets": 298,
+      "bytes": 39956,
+      "duration": 4.98,
+      "broadcast": 99,
+      "multicast": 0,
+      "unique_macs": 3,
+      "unique_hosts": 3,
+      "hosts": [
+        {
+          "ip": "10.10.30.1",
+          "mac": "00:0c:29:cc:00:01",
+          "vendor": "VMware"
+        },
+        {
+          "ip": "10.10.30.5",
+          "mac": "00:1b:21:aa:00:05",
+          "vendor": "Intel"
+        },
+        {
+          "ip": "10.10.30.6",
+          "mac": "3c:22:fb:bb:00:06",
+          "vendor": ""
+        }
+      ],
+      "top_talkers": {
+        "10.10.30.5": 31442,
+        "10.10.30.6": 31442,
+        "10.10.30.1": 8514,
+        "255.255.255.255": 8514
+      },
+      "conversations": {
+        "10.10.30.5 <-> 10.10.30.6": 31442,
+        "10.10.30.1 <-> 255.255.255.255": 8514
+      },
+      "protocols": {
+        "TCP": 31442,
+        "UDP": 8514
+      },
+      "services": {
+        "443/tcp": 199,
+        "67/udp": 99,
+        "68/udp": 99
+      },
+      "dhcp_servers": [
+        "10.10.30.1"
+      ],
+      "routers": []
+    },
+    {
+      "vlan": 40,
+      "packets": 297,
+      "bytes": 37224,
+      "duration": 4.93,
+      "broadcast": 99,
+      "multicast": 0,
+      "unique_macs": 2,
+      "unique_hosts": 2,
+      "hosts": [
+        {
+          "ip": "10.10.40.20",
+          "mac": "00:1a:1e:ee:00:20",
+          "vendor": "Aruba/HPE"
+        },
+        {
+          "ip": "10.10.40.9",
+          "mac": "b8:27:eb:dd:00:09",
+          "vendor": "Raspberry Pi"
+        }
+      ],
+      "top_talkers": {
+        "10.10.40.9": 37224,
+        "10.10.40.20": 31284,
+        "10.10.40.1": 5940
+      },
+      "conversations": {
+        "10.10.40.20 <-> 10.10.40.9": 31284,
+        "10.10.40.1 <-> 10.10.40.9": 5940
+      },
+      "protocols": {
+        "TCP": 31284,
+        "ARP": 5940
+      },
+      "services": {},
+      "dhcp_servers": [],
+      "routers": []
+    },
+    {
+      "vlan": 99,
+      "packets": 99,
+      "bytes": 8514,
+      "duration": 4.93,
+      "broadcast": 0,
+      "multicast": 0,
+      "unique_macs": 1,
+      "unique_hosts": 1,
+      "hosts": [
+        {
+          "ip": "10.10.99.7",
+          "mac": "00:1a:1e:ee:00:20",
+          "vendor": "Aruba/HPE"
+        }
+      ],
+      "top_talkers": {
+        "10.10.99.7": 8514,
+        "10.10.99.1": 8514
+      },
+      "conversations": {
+        "10.10.99.1 <-> 10.10.99.7": 8514
+      },
+      "protocols": {
+        "UDP": 8514
+      },
+      "services": {
+        "514/udp": 99
+      },
+      "dhcp_servers": [],
+      "routers": []
+    },
+    {
+      "vlan": null,
+      "packets": 72,
+      "bytes": 11806,
+      "duration": 4.9,
+      "broadcast": 0,
+      "multicast": 0,
+      "unique_macs": 2,
+      "unique_hosts": 3,
+      "hosts": [
+        {
+          "ip": "160.79.104.10",
+          "mac": "02:fc:00:00:00:05",
+          "vendor": "(locally administered / randomized)"
+        },
+        {
+          "ip": "192.0.2.2",
+          "mac": "02:fc:00:00:00:01",
+          "vendor": "(locally administered / randomized)"
+        },
+        {
+          "ip": "34.149.66.165",
+          "mac": "02:fc:00:00:00:05",
+          "vendor": "(locally administered / randomized)"
+        }
+      ],
+      "top_talkers": {
+        "192.0.2.2": 11806,
+        "160.79.104.10": 11278,
+        "34.149.66.165": 528
+      },
+      "conversations": {
+        "160.79.104.10 <-> 192.0.2.2": 11278,
+        "192.0.2.2 <-> 34.149.66.165": 528
+      },
+      "protocols": {
+        "TCP": 11806
+      },
+      "services": {
+        "443/tcp": 72
+      },
+      "dhcp_servers": [],
+      "routers": []
+    }
+  ],
+  "findings": [
+    [
+      "ok",
+      "694 of 766 frames are from other devices - the mirror is delivering."
+    ],
+    [
+      "info",
+      "3 VLAN(s) seen: 30, 40, 99"
+    ],
+    [
+      "ok",
+      "Both directions of most conversations are present."
+    ]
+  ],
+  "files": [
+    {
+      "file": "/tmp/claude-0/-home-user-alfresco/1013fb50-aa40-5007-9b7a-8e7f441fc130/scratchpad/span.pcap",
+      "packets": 766,
+      "bytes": 97500
+    }
+  ],
+  "interface": "eth0",
+  "kernel_filtered": false
+}

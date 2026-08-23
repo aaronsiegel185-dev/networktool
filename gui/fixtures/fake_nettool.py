@@ -44,6 +44,10 @@ def main(argv):
         return emit("lldp.json")
     if command == "pcap":
         return emit("pcap.json")
+    if command == "mirror":
+        if "--plan" in rest:
+            return emit("mirror_plan.json")
+        return emit("mirror.json")
     if command == "ping":
         return emit("ping.json")
     if command == "capture":

@@ -165,6 +165,63 @@ Decoded LLDP TLVs include chassis/port IDs, capabilities, management addresses,
 802.1 VLAN, 802.3 MAC/PHY, PoE (LLDP-MED and 802.3), link aggregation and max frame size.
 CDP adds platform, software version, VTP domain, native and voice VLAN, duplex and power draw.
 
+### Switch port mirrors and VLAN capture
+
+Plug into a SPAN/mirror destination port and see every VLAN on it:
+
+```bash
+sudo nettool mirror                          # every VLAN, with a per-VLAN inventory
+sudo nettool mirror --vlan 30,40 -d 60       # only these VLANs, filtered in the kernel
+sudo nettool mirror -w span.pcap --split     # one pcap per VLAN: span-vlan30.pcap, ...
+sudo nettool mirror --check                  # 10 seconds: "is this mirror actually working?"
+nettool mirror --from-pcap span.pcap -v      # same analysis on a capture taken earlier
+sudo nettool mirror --plan --vlan 30         # the switch commands to set the mirror up
+```
+
+For each VLAN it reports frames, bytes, hosts (IP + MAC + vendor), broadcast share,
+protocol mix, top talkers, conversations, DHCP servers and routers. It also checks the
+mirror itself and names the classic mistakes:
+
+```
+== findings ==
+  [ ok ] 827 of 913 frames are from other devices - the mirror is delivering.
+  [info] 3 VLAN(s) seen: 30, 40, 99
+  [WARN] Only 8% of conversations appear in both directions - the mirror is probably
+         configured for one direction (`rx` or `tx` only) instead of `both`.
+  [WARN] No 802.1Q tags on any frame. The mirror is stripping VLAN tags, so traffic from
+         different VLANs cannot be told apart.
+```
+
+Two details that matter on a real mirror:
+
+* **VLAN filtering runs in the kernel.** `--vlan` compiles a BPF program and attaches it
+  to the capture socket, so a busy mirror is dropped by the kernel rather than by a
+  Python loop. Without it, a gigabit VLAN will out-run any userspace filter.
+* **VLAN tags are preserved.** Linux hands VLAN-tagged frames to capture sockets with the
+  tag stripped and the id passed out of band; nettool puts it back before decoding or
+  writing the pcap, the same way tcpdump does.
+
+`--plan` uses LLDP/CDP to work out which switch and port you are plugged into, then
+prints the configuration for that platform - Cisco IOS and NX-OS, ArubaOS-CX, ProCurve,
+Junos, MikroTik, UniFi/EdgeSwitch and Extreme:
+
+```
+== mirror plan ==
+switch              sw-idf3-01
+platform            cisco-ios
+management ip       10.20.0.5
+mirror destination  GigabitEthernet1/0/24
+mirror source       VLAN 30
+
+! Cisco IOS / IOS-XE
+configure terminal
+monitor session 1 source vlan 30 both
+monitor session 1 destination interface GigabitEthernet1/0/24 encapsulation dot1q ingress
+end
+```
+
+Nothing is sent to the switch - the commands are printed for you to review and paste.
+
 ### Packet capture and pcap export
 
 ```bash
@@ -290,8 +347,8 @@ The bundle carries the CLI inside `Contents/Resources`, so the app is self-conta
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -v     # CLI: 88 tests
-cd gui && cargo test                         # GUI: 31 tests
+python3 -m unittest discover -s tests -v     # CLI: 162 tests
+cd gui && cargo test                         # GUI: 34 tests
 ```
 
 The suite covers the packet decoder, pcap reader/writer round-trips, the filter language,

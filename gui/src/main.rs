@@ -36,7 +36,7 @@ fn parse_options() -> Result<Options, String> {
                 println!(
                     "nettool-gui - desktop GUI for nettool\n\n\
                      Options:\n  \
-                     --tab <name>        open on a tab: overview, discover, scan, lldp, capture, wifi\n  \
+                     --tab <name>        open on a tab: overview, discover, scan, lldp, capture, mirror, wifi\n  \
                      --nettool <cmd>     how to run nettool (default: autodetect, e.g. \"python3 -m nettool\")\n  \
                      --sudo              run nettool through `sudo -n`\n  \
                      --wifi-view <name>  wifi sub-view: analyze, networks, link, monitor\n  \
@@ -54,6 +54,7 @@ fn parse_options() -> Result<Options, String> {
                     "scan" => Tab::Scan,
                     "lldp" | "cdp" => Tab::Lldp,
                     "capture" => Tab::Capture,
+                    "mirror" | "vlan" | "span" => Tab::Mirror,
                     "wifi" | "wireless" => Tab::Wifi,
                     other => return Err(format!("unknown tab: {other}")),
                 };
