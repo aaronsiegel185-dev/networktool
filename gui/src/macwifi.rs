@@ -12,7 +12,21 @@
 //! We only use it to fill in the names - channels, signal, airtime and the whole
 //! congestion analysis still come from the CLI, none of which macOS redacts.
 
-use crate::model::Bss;
+use crate::model::{looks_like_mac, Bss};
+
+/// macOS hands these back in place of an address it will not give out, so they
+/// must never be matched on or shown - two links "sharing" 02:00:00:00:00:00
+/// would otherwise look like the same access point.
+pub const WITHHELD_BSSIDS: [&str; 2] = ["02:00:00:00:00:00", "00:00:00:00:00:00"];
+
+/// A BSSID worth keeping, lowercased, or "" if macOS withheld it.
+pub fn usable_bssid(value: &str) -> String {
+    let mac = value.trim().to_lowercase();
+    if !looks_like_mac(&mac) || WITHHELD_BSSIDS.contains(&mac.as_str()) {
+        return String::new();
+    }
+    mac
+}
 
 /// One BSS as CoreWLAN sees it.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -38,12 +52,17 @@ pub fn fill_names(networks: &mut [Bss], found: &[Neighbour]) -> usize {
     // BSSID matches first: they are certain, and taking them up front stops a
     // fuzzy channel match from stealing the entry a certain one needed.
     for net in networks.iter_mut() {
-        if !net.ssid.is_empty() || net.bssid.is_empty() {
+        if !net.ssid.is_empty() {
             continue;
         }
-        let want = net.bssid.to_lowercase();
+        // A withheld placeholder is not an identity: matching on it would make
+        // every network macOS declined to name look like the same access point.
+        let want = usable_bssid(&net.bssid);
+        if want.is_empty() {
+            continue;
+        }
         let match_index = found.iter().enumerate().position(|(index, n)| {
-            !spent[index] && !n.ssid.is_empty() && n.bssid.to_lowercase() == want
+            !spent[index] && !n.ssid.is_empty() && usable_bssid(&n.bssid) == want
         });
         if let Some(index) = match_index {
             net.ssid = found[index].ssid.clone();
@@ -164,7 +183,7 @@ mod imp {
     unsafe fn neighbour(network: *mut c_void) -> Neighbour {
         Neighbour {
             ssid: string(send_ptr(network, "ssid")),
-            bssid: string(send_ptr(network, "bssid")),
+            bssid: super::usable_bssid(&string(send_ptr(network, "bssid"))),
             channel: channel_of(network),
             rssi: send_isize(network, "rssiValue") as i64,
         }

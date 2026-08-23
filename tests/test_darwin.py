@@ -351,6 +351,34 @@ class TestWifiParsing(unittest.TestCase):
         found = darwin.parse_scutil_airport("  BSSID : <data> 0x0200000\n")
         self.assertEqual(found["bssid"], "")
 
+    def test_the_withheld_placeholder_is_not_treated_as_an_address(self):
+        # macOS hands back a locally-administered all-zero MAC rather than saying
+        # "<redacted>", and the OUI table would happily call it "randomized".
+        for withheld in ["02:00:00:00:00:00", "00:00:00:00:00:00",
+                         "<data> 0x020000000000"]:
+            self.assertEqual(darwin.usable_bssid(withheld), "", withheld)
+        self.assertEqual(darwin.usable_bssid("3c:22:fb:11:22:33"), "3c:22:fb:11:22:33")
+
+    def test_a_connection_without_an_identity_is_flagged(self):
+        # No "<redacted>" anywhere: real channel and signal, no name, no address.
+        link = darwin.mark_withheld({"connected": True, "ssid": "", "bssid": "",
+                                     "signal_dbm": -42})
+        self.assertTrue(link["redacted"])
+        # A network genuinely hiding its SSID still gives us its BSSID, and no
+        # permission recovers a name the AP itself is not broadcasting.
+        hidden_ssid = darwin.mark_withheld({"connected": True, "ssid": "",
+                                            "bssid": "3c:22:fb:11:22:33"})
+        self.assertFalse(hidden_ssid.get("redacted"))
+        named = darwin.mark_withheld({"connected": True, "ssid": "HomeNet",
+                                      "bssid": "3c:22:fb:11:22:33"})
+        self.assertFalse(named.get("redacted"))
+
+    def test_wdutil_withheld_bssid_flags_the_link(self):
+        text = WDUTIL.replace("3C:22:FB:11:22:33", "02:00:00:00:00:00")
+        link = darwin.parse_wdutil(text)
+        self.assertEqual(link["bssid"], "")
+        self.assertTrue(link["redacted"])
+
     def test_normalise_mac_accepts_what_macos_actually_prints(self):
         for given, want in [
             ("3C:22:FB:11:22:33", "3c:22:fb:11:22:33"),
@@ -364,7 +392,8 @@ class TestWifiParsing(unittest.TestCase):
             self.assertEqual(darwin.normalise_mac(junk), "", repr(junk))
 
     def test_blanked_name_is_recovered_without_location_permission(self):
-        link = {"interface": "en0", "ssid": "", "bssid": "", "redacted": True}
+        link = {"interface": "en0", "ssid": "", "bssid": "",
+                "connected": True, "redacted": True}
         calls = []
 
         def fake_run(argv, timeout=30, stdin=None):
@@ -391,7 +420,8 @@ class TestWifiParsing(unittest.TestCase):
         saved = darwin.run_cmd
         darwin.run_cmd = fake_run
         try:
-            out = darwin._unredact({"interface": "en0", "ssid": "", "redacted": True})
+            out = darwin._unredact({"interface": "en0", "ssid": "",
+                                    "connected": True, "redacted": True})
         finally:
             darwin.run_cmd = saved
         self.assertTrue(out["redacted"])

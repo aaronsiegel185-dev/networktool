@@ -824,14 +824,27 @@ impl WifiTab {
     }
 
     /// True once something we have actually fetched came back with a blanked name.
+    ///
+    /// A gap counts as much as the flag: macOS increasingly withholds by handing
+    /// back an empty name and 02:00:00:00:00:00 for the address, with nothing
+    /// saying "<redacted>" anywhere, and that has to trigger the CoreWLAN fill
+    /// just the same.
     fn names_hidden(&self) -> bool {
-        let link = self.link_report.as_ref().map(|l| l.redacted).unwrap_or(false);
+        let link = self
+            .link_report
+            .as_ref()
+            .map(|l| l.redacted || l.identity_missing())
+            .unwrap_or(false);
         // Deliberately the rows themselves, not the report's summary flag: once
         // CoreWLAN has named them the hint has nothing left to explain.
         let analyze = self
             .analyze_report
             .as_ref()
-            .map(|r| r.current.redacted || r.networks.iter().any(|n| n.redacted))
+            .map(|r| {
+                r.current.redacted
+                    || r.current.identity_missing()
+                    || r.networks.iter().any(|n| n.redacted)
+            })
             .unwrap_or(false);
         let scan = self
             .scan_report
@@ -1204,7 +1217,8 @@ fn name_link(link: &mut WifiLink, mine: Option<&macwifi::Neighbour>) {
         link.ssid = mine.ssid.clone();
         link.redacted = false;
     }
-    if link.bssid.is_empty() && !mine.bssid.is_empty() {
+    // Overwrite a withheld placeholder too, not only an empty field.
+    if !crate::model::looks_like_mac(&link.bssid) && !mine.bssid.is_empty() {
         link.bssid = mine.bssid.clone();
     }
 }

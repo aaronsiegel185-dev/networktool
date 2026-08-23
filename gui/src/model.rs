@@ -993,6 +993,14 @@ pub fn looks_like_mac(value: &str) -> bool {
 }
 
 impl WifiLink {
+    /// Connected, but macOS did not say to what.
+    ///
+    /// The modern shape of a withheld link: real channel, rate and signal, with
+    /// the name and the address simply absent.
+    pub fn identity_missing(&self) -> bool {
+        self.connected && (self.ssid.is_empty() || !looks_like_mac(&self.bssid))
+    }
+
     /// The access point's MAC, or why we do not have it.
     ///
     /// Anything that is not an address is treated as absent: macOS renders a

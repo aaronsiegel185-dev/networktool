@@ -89,3 +89,34 @@ fn nothing_from_corewlan_changes_nothing() {
     assert_eq!(fill_names(&mut networks, &[]), 0);
     assert!(networks[0].redacted);
 }
+
+#[test]
+fn a_withheld_placeholder_is_not_an_address() {
+    use nettool_gui::macwifi::usable_bssid;
+    assert_eq!(usable_bssid("02:00:00:00:00:00"), "");
+    assert_eq!(usable_bssid("00:00:00:00:00:00"), "");
+    assert_eq!(usable_bssid("0x0200000"), "");
+    assert_eq!(usable_bssid(""), "");
+    assert_eq!(usable_bssid("3C:22:FB:11:22:33"), "3c:22:fb:11:22:33");
+}
+
+#[test]
+fn two_withheld_networks_do_not_look_like_one_ap() {
+    // Both sides carrying the placeholder must not match on it.
+    let mut networks = vec![Bss {
+        ssid: String::new(),
+        bssid: "02:00:00:00:00:00".into(),
+        channel: Some(36),
+        signal_dbm: Some(-50.0),
+        redacted: true,
+        ..Default::default()
+    }];
+    let found = vec![Neighbour {
+        ssid: "Elsewhere".into(),
+        bssid: "02:00:00:00:00:00".into(),
+        channel: 149,
+        rssi: -80,
+    }];
+    assert_eq!(fill_names(&mut networks, &found), 0);
+    assert!(networks[0].ssid.is_empty());
+}

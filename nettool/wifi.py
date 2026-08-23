@@ -547,7 +547,7 @@ def _name_the_ap(state):
 
         # Never let a CFData rendering reach a vendor lookup: oui.lookup strips
         # the punctuation and would happily name a vendor for "0x020000...".
-        bssid = darwin.normalise_mac(bssid)
+        bssid = darwin.usable_bssid(bssid)
         state["bssid"] = bssid
     state["bssid_vendor"] = oui.lookup(bssid) if bssid else ""
     return state

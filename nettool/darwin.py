@@ -441,6 +441,34 @@ def normalise_mac(value):
     return ""
 
 
+# macOS does not always say "<redacted>" for an address it will not give out.
+# It hands back a locally-administered all-zero MAC instead, which reads as a
+# real (randomised) address unless you know to expect it.
+WITHHELD_BSSIDS = frozenset(["02:00:00:00:00:00", "00:00:00:00:00:00"])
+
+
+def mark_withheld(link):
+    """Flag a link macOS described without identifying.
+
+    Being told the channel, rate and signal of a connection whose address is
+    missing is the shape this takes now - there is no "<redacted>" to spot, just
+    a gap - and it is what has to trigger asking CoreWLAN instead.
+
+    The BSSID is the tell rather than the SSID: macOS withholds both together,
+    so a link with an address but no name is a network genuinely hiding its
+    SSID, which is not a permissions problem and nothing can recover.
+    """
+    if link.get("connected") and not link.get("bssid"):
+        link["redacted"] = True
+    return link
+
+
+def usable_bssid(value):
+    """A BSSID we can actually show, or "" if macOS withheld it."""
+    mac = normalise_mac(value)
+    return "" if mac in WITHHELD_BSSIDS else mac
+
+
 def is_redacted(*values):
     """True if macOS blanked a Wi-Fi name.
 
@@ -488,7 +516,7 @@ def parse_airport_json(payload):
         networks.append({
             "ssid": "" if redacted else name,
             # macOS does not expose neighbouring BSSIDs without extra entitlements.
-            "bssid": "" if redacted else normalise_mac(bssid),
+            "bssid": "" if redacted else usable_bssid(bssid),
             "channel": channel,
             "band": band,
             "freq": None,
@@ -547,7 +575,7 @@ def parse_wdutil(text):
         "interface": info.get("interface name", ""),
         "connected": bool(ssid) and "not associated" not in ssid.lower(),
         "ssid": "" if redacted else ssid,
-        "bssid": "" if redacted else normalise_mac(bssid),
+        "bssid": "" if redacted else usable_bssid(bssid),
         "channel": channel,
         "band": band,
         "width_mhz": width,
@@ -561,7 +589,7 @@ def parse_wdutil(text):
         "mac": info.get("mac address", ""),
         "redacted": redacted,
     }
-    return link
+    return mark_withheld(link)
 
 
 def parse_airport_current(payload):
@@ -591,11 +619,11 @@ def parse_airport_current(payload):
     ssid = current.get("_name", "")
     bssid = current.get("spairport_network_bssid", "")
     redacted = is_redacted(ssid, bssid)
-    return {
+    return mark_withheld({
         "interface": iface,
         "connected": True,
         "ssid": "" if redacted else ssid,
-        "bssid": "" if redacted else normalise_mac(bssid),
+        "bssid": "" if redacted else usable_bssid(bssid),
         "channel": channel,
         "band": band,
         "width_mhz": width,
@@ -606,7 +634,7 @@ def parse_airport_current(payload):
         "tx_bitrate": "%s Mbit/s" % rate if rate else "",
         "security": " ".join(_security_label(current.get("spairport_security_mode", ""))),
         "redacted": redacted,
-    }
+    })
 
 
 def _system_profiler_wifi():
@@ -714,7 +742,7 @@ def parse_scutil_airport(text):
         elif key == "SSID":
             data_ssid = _scutil_text(value)
         elif key == "BSSID":
-            info["bssid"] = normalise_mac(value)
+            info["bssid"] = usable_bssid(value)
     if not info["ssid"]:
         info["ssid"] = data_ssid
     return info
@@ -784,9 +812,9 @@ def _unredact(link):
         link["ssid"] = names["ssid"]
     if names["bssid"]:
         link["bssid"] = names["bssid"]
-    # Still redacted only if we could not recover the name after all.
-    link["redacted"] = not link.get("ssid")
-    return link
+    # Still flagged only where a gap survived the recovery.
+    link["redacted"] = False
+    return mark_withheld(link)
 
 
 def wifi_link(quiet=False):
