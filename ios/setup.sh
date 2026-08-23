@@ -16,20 +16,42 @@ die()  { printf '\033[31m error:\033[0m %s\n' "$1" >&2; exit 1; }
 
 # --- full Xcode, not just the command line tools ---------------------------
 # The CLT are enough for the Mac GUI and the Python CLI, so it is entirely
-# normal to have got this far without ever installing Xcode itself.
-if ! command -v xcodebuild >/dev/null 2>&1; then
-    die "Xcode is not installed. The Mac app and CLI only need the command line
-       tools, but building for iPad needs the full Xcode from the App Store.
-       Install it, open it once to accept the licence, then run this again."
-fi
+# normal to have got this far without ever installing Xcode itself. Note that
+# `xcodebuild` exists as a stub inside the CLT, so its presence proves nothing -
+# what matters is where xcode-select points and whether Xcode.app is there.
+
+find_xcode() {
+    # The usual place first, then anywhere Spotlight knows about, since Xcode
+    # is often kept on a second volume once it has eaten 15 GB.
+    local candidate
+    for candidate in /Applications/Xcode.app /Applications/Xcode-beta.app; do
+        [ -d "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+    done
+    if command -v mdfind >/dev/null 2>&1; then
+        candidate="$(mdfind "kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'"                      2>/dev/null | head -1)"
+        [ -n "$candidate" ] && [ -d "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+    fi
+    return 1
+}
 
 DEVELOPER_DIR="$(xcode-select -p 2>/dev/null || true)"
 case "$DEVELOPER_DIR" in
-    *CommandLineTools*)
-        die "xcode-select points at the command line tools, not Xcode itself:
-         $DEVELOPER_DIR
-       Point it at Xcode and try again:
-         sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+    *Xcode*) ;;                     # already pointed at a real Xcode
+    *)
+        if XCODE="$(find_xcode)"; then
+            die "Xcode is installed at $XCODE, but the developer directory still
+       points at the command line tools:
+         ${DEVELOPER_DIR:-none}
+       Point it at Xcode and run this again:
+         sudo xcode-select -s \"$XCODE/Contents/Developer\""
+        else
+            die "Xcode is not installed. The Mac app and the CLI only need the
+       command line tools, which is why everything so far has worked - but
+       building for an iPad needs the full Xcode.
+       Install it from the App Store (it is around 15 GB and takes a while):
+         https://apps.apple.com/app/xcode/id497799835
+       Open it once so it can finish setting up, then run this again."
+        fi
         ;;
 esac
 
