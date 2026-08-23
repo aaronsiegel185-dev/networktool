@@ -21,6 +21,10 @@ settings:
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.9"
+    # 1 is iPhone, 2 is iPad. Set here rather than left to the SDK default,
+    # because "whatever Xcode felt like" is the difference between the iPad
+    # appearing in the run destinations and not.
+    TARGETED_DEVICE_FAMILY: "1,2"
     # A free Apple ID can sign and install, but cannot provision entitlements.
     # Automatic signing with your own team is what makes that work.
     CODE_SIGN_STYLE: Automatic
@@ -41,6 +45,13 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # An iPad is used in whatever orientation it is picked up in, and
+        # supporting all four is also what lets the app take part in Split View.
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         # Required from iOS 14: without it, every scan and every connection to

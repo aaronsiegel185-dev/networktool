@@ -42,20 +42,58 @@ must therefore not reference it at all.
 
 Moving from one to the other is switching scheme. No code changes.
 
-## Building
+## Getting it onto an iPad or iPhone
+
+There is no way around needing a Mac with **full Xcode** - not the command line
+tools, which is all the rest of this repository needs. Apple has no path that
+puts a self-built app on a device without one.
 
 ```bash
-brew install xcodegen
-cd ios
-xcodegen generate
-open Nettool.xcodeproj
+./ios/setup.sh          # checks Xcode, installs xcodegen, generates the project
+open ios/Nettool.xcodeproj
 ```
 
-Then set your team under Signing & Capabilities and run on a device. A free
-Apple ID works; the build expires after seven days and is reinstalled by
-building again, which is Apple's rule for free accounts rather than this app's.
+Then in Xcode:
 
-Tests run without a device:
+1. Select the **Nettool** target → **Signing & Capabilities**
+2. Tick *Automatically manage signing* and pick your Team. A free Apple ID
+   works - add it under Xcode → Settings → Accounts.
+3. If the bundle identifier is refused as already taken, change it to something
+   of your own, such as `dev.yourname.nettool`.
+4. Plug the iPad in, unlock it, tap **Trust**, and choose it in the run
+   destination menu.
+5. Press Run.
+
+The first launch is refused until the certificate is trusted: on the iPad,
+**Settings → General → VPN & Device Management → your Apple ID → Trust**.
+
+The app targets iOS 16, so any iPad from 2017 onwards will run it, and it is
+built for both device families - the same binary is an iPhone app and an iPad
+app.
+
+### What a free Apple ID costs you
+
+| | Free | Paid ($99/yr) |
+|---|---|---|
+| Install on your own devices | yes | yes |
+| Rebuild every | 7 days | 1 year |
+| Apps installed at once | 3 | unlimited |
+| Wi-Fi entitlement (your network's name) | no | yes |
+| TestFlight, App Store | no | yes |
+
+The seven-day expiry is Apple's rule for free accounts, not this app's: when it
+lapses the app refuses to launch, and rebuilding from Xcode fixes it. Nothing
+stored on the device is lost.
+
+### Without a Mac
+
+You cannot. TestFlight needs a paid account *and* a Mac (or Xcode Cloud) to
+upload the build in the first place, so it is not a way round the requirement -
+only a way to distribute afterwards.
+
+## Tests
+
+These run without a device or a simulator:
 
 ```bash
 cd ios/NettoolKit && swift test
