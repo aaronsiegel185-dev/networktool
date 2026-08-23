@@ -120,3 +120,40 @@ fn two_withheld_networks_do_not_look_like_one_ap() {
     assert_eq!(fill_names(&mut networks, &found), 0);
     assert!(networks[0].ssid.is_empty());
 }
+
+#[test]
+fn our_own_name_is_found_in_the_scan_by_address() {
+    let link = Neighbour {
+        ssid: String::new(),
+        bssid: "3c:22:fb:11:22:33".into(),
+        channel: 48,
+        rssi: -42,
+    };
+    let found = vec![
+        seen("Neighbour", "aa:bb:cc:dd:ee:ff", 48, -70),
+        seen("HomeNet", "3C:22:FB:11:22:33", 48, -42),
+    ];
+    assert_eq!(
+        nettool_gui::macwifi::resolve_own_ssid(&link, &found),
+        Some("HomeNet".to_string())
+    );
+}
+
+#[test]
+fn a_name_we_already_have_is_not_looked_up() {
+    let link = seen("HomeNet", "3c:22:fb:11:22:33", 48, -42);
+    let found = vec![seen("Wrong", "3c:22:fb:11:22:33", 48, -42)];
+    assert_eq!(nettool_gui::macwifi::resolve_own_ssid(&link, &found), None);
+}
+
+#[test]
+fn without_a_usable_address_there_is_nothing_to_look_up() {
+    let withheld = Neighbour {
+        ssid: String::new(),
+        bssid: "02:00:00:00:00:00".into(),
+        channel: 48,
+        rssi: -42,
+    };
+    let found = vec![seen("HomeNet", "02:00:00:00:00:00", 48, -42)];
+    assert_eq!(nettool_gui::macwifi::resolve_own_ssid(&withheld, &found), None);
+}

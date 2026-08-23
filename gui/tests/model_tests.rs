@@ -445,3 +445,18 @@ fn refuses_to_show_a_data_blob_as_an_address() {
     assert!(!nettool_gui::model::looks_like_mac("zz:22:fb:11:22:33"));
     assert!(!nettool_gui::model::looks_like_mac(""));
 }
+
+#[test]
+fn a_name_of_padding_is_no_name() {
+    use nettool_gui::model::visible_name;
+    assert!(visible_name("HomeNet"));
+    assert!(!visible_name(""));
+    assert!(!visible_name("   "));
+    assert!(!visible_name("\u{0}\u{0}\u{0}"));
+
+    // The symptom this exists for: a blank where the network name belongs.
+    let padded: WifiLink =
+        serde_json::from_str("{\"ssid\":\"\\u0000\\u0000\",\"connected\":true}").unwrap();
+    assert_eq!(padded.display_ssid(), "(unknown)");
+    assert!(padded.identity_missing());
+}

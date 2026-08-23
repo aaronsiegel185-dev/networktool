@@ -101,6 +101,26 @@ pub fn fill_names(networks: &mut [Bss], found: &[Neighbour]) -> usize {
     filled
 }
 
+/// Our own network's name, taken from the scan list by address.
+///
+/// CWInterface.ssid comes back empty in cases where the BSSID does not - a name
+/// that is not valid UTF-8, or simply a nil where macOS felt like one. The scan
+/// results carry our own BSS too, so when we know which address we are on, the
+/// name is still there to be had.
+pub fn resolve_own_ssid(link: &Neighbour, found: &[Neighbour]) -> Option<String> {
+    if !link.ssid.is_empty() {
+        return None;
+    }
+    let want = usable_bssid(&link.bssid);
+    if want.is_empty() {
+        return None;
+    }
+    found
+        .iter()
+        .find(|n| usable_bssid(&n.bssid) == want && !n.ssid.is_empty())
+        .map(|n| n.ssid.clone())
+}
+
 #[cfg(target_os = "macos")]
 mod imp {
     use super::Neighbour;
@@ -180,9 +200,34 @@ mod imp {
         send_isize(send_ptr(obj, "wlanChannel"), "channelNumber") as i64
     }
 
+    /// An NSData's bytes as text - CWInterface exposes `ssidData` for the names
+    /// its `ssid` property will not hand over as a string.
+    unsafe fn data_string(obj: *mut c_void) -> String {
+        if obj.is_null() {
+            return String::new();
+        }
+        let bytes_of: unsafe extern "C" fn(*mut c_void, *mut c_void) -> *const u8 =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let bytes = bytes_of(obj, selector("bytes"));
+        let length = send_isize(obj, "length").max(0) as usize;
+        if bytes.is_null() || length == 0 {
+            return String::new();
+        }
+        let slice = std::slice::from_raw_parts(bytes, length);
+        String::from_utf8_lossy(slice).trim_end_matches('\0').to_string()
+    }
+
+    unsafe fn ssid_of(object: *mut c_void) -> String {
+        let name = string(send_ptr(object, "ssid"));
+        if !name.is_empty() {
+            return name;
+        }
+        data_string(send_ptr(object, "ssidData"))
+    }
+
     unsafe fn neighbour(network: *mut c_void) -> Neighbour {
         Neighbour {
-            ssid: string(send_ptr(network, "ssid")),
+            ssid: ssid_of(network),
             bssid: super::usable_bssid(&string(send_ptr(network, "bssid"))),
             channel: channel_of(network),
             rssi: send_isize(network, "rssiValue") as i64,
@@ -196,9 +241,14 @@ mod imp {
             if iface.is_null() {
                 return None;
             }
-            let found = neighbour(iface);
+            let mut found = neighbour(iface);
             if found.ssid.is_empty() && found.bssid.is_empty() {
                 return None;
+            }
+            if found.ssid.is_empty() {
+                if let Some(name) = super::resolve_own_ssid(&found, &scan()) {
+                    found.ssid = name;
+                }
             }
             Some(found)
         }

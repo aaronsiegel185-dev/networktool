@@ -69,6 +69,8 @@ pub struct WifiTab {
 
     /// Set once CoreWLAN has actually given a blanked network its name back.
     names_recovered: bool,
+    /// What CoreWLAN last returned, shown when names stay hidden anyway.
+    corewlan_note: Option<String>,
     permission_status: Option<i32>,
     permission_deadline: Option<Instant>,
     permission_error: Option<String>,
@@ -101,6 +103,7 @@ impl Default for WifiTab {
             hosts_report: None,
             hosts_error: None,
             names_recovered: false,
+            corewlan_note: None,
             permission_status: None,
             permission_deadline: None,
             permission_error: None,
@@ -678,6 +681,17 @@ impl WifiTab {
         }
         let found = macwifi::scan();
         let mine = macwifi::link();
+        // Say what CoreWLAN actually handed over. Without this, "the name is
+        // still blank" is indistinguishable from "we never asked".
+        self.corewlan_note = Some(match &mine {
+            Some(link) => format!(
+                "CoreWLAN: {} networks, own name {}, own address {}",
+                found.len(),
+                if link.ssid.is_empty() { "empty" } else { "ok" },
+                if link.bssid.is_empty() { "withheld" } else { "ok" },
+            ),
+            None => format!("CoreWLAN: {} networks, no association reported", found.len()),
+        });
         if found.is_empty() && mine.is_none() {
             return;
         }
@@ -821,6 +835,14 @@ impl WifiTab {
                 ui.colored_label(widgets::CRIT, err);
             }
         });
+        if let Some(note) = self.corewlan_note.as_ref() {
+            ui.label(
+                egui::RichText::new(note)
+                    .size(11.0)
+                    .monospace()
+                    .color(widgets::MUTED),
+            );
+        }
     }
 
     /// True once something we have actually fetched came back with a blanked name.
@@ -1213,7 +1235,7 @@ fn name_link(link: &mut WifiLink, mine: Option<&macwifi::Neighbour>) {
     let Some(mine) = mine else {
         return;
     };
-    if link.ssid.is_empty() && !mine.ssid.is_empty() {
+    if !crate::model::visible_name(&link.ssid) && !mine.ssid.is_empty() {
         link.ssid = mine.ssid.clone();
         link.redacted = false;
     }

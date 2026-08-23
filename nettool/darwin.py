@@ -458,6 +458,8 @@ def mark_withheld(link):
     so a link with an address but no name is a network genuinely hiding its
     SSID, which is not a permissions problem and nothing can recover.
     """
+    if not visible_name(link.get("ssid")):
+        link["ssid"] = ""
     if link.get("connected") and not link.get("bssid"):
         link["redacted"] = True
     return link
@@ -467,6 +469,21 @@ def usable_bssid(value):
     """A BSSID we can actually show, or "" if macOS withheld it."""
     mac = normalise_mac(value)
     return "" if mac in WITHHELD_BSSIDS else mac
+
+
+def visible_name(value):
+    """Whether a name would actually read as one.
+
+    macOS returns padding rather than an empty string for a name it will not
+    decode, and a blank where an SSID belongs looks like a broken app instead of
+    missing data.
+    """
+    text = str(value or "").strip()
+    return any(not _is_control(ch) for ch in text)
+
+
+def _is_control(ch):
+    return ord(ch) < 32 or ord(ch) == 127
 
 
 def is_redacted(*values):

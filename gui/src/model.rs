@@ -861,10 +861,10 @@ pub struct Bss {
 
 impl Bss {
     pub fn display_ssid(&self) -> &str {
-        match (self.ssid.is_empty(), self.redacted) {
-            (false, _) => &self.ssid,
-            (true, true) => "(hidden by macOS)",
-            (true, false) => "(hidden)",
+        match (visible_name(&self.ssid), self.redacted) {
+            (true, _) => &self.ssid,
+            (false, true) => "(hidden by macOS)",
+            (false, false) => "(hidden)",
         }
     }
 }
@@ -980,6 +980,17 @@ pub struct WifiLink {
     pub bssid_vendor: String,
 }
 
+/// Whether a name would actually show up on screen.
+///
+/// An SSID that is empty renders as "(unknown)", but one made of spaces or
+/// control characters renders as nothing at all - a blank where a name belongs,
+/// which reads as a bug in the app rather than as missing data. macOS produces
+/// these: a name it will not decode comes back as padding rather than as an
+/// empty string.
+pub fn visible_name(value: &str) -> bool {
+    value.trim().chars().any(|c| !c.is_control())
+}
+
 /// Six colon-separated hex bytes, and nothing else.
 pub fn looks_like_mac(value: &str) -> bool {
     let mut bytes = 0;
@@ -998,7 +1009,7 @@ impl WifiLink {
     /// The modern shape of a withheld link: real channel, rate and signal, with
     /// the name and the address simply absent.
     pub fn identity_missing(&self) -> bool {
-        self.connected && (self.ssid.is_empty() || !looks_like_mac(&self.bssid))
+        self.connected && (!visible_name(&self.ssid) || !looks_like_mac(&self.bssid))
     }
 
     /// The access point's MAC, or why we do not have it.
@@ -1018,10 +1029,10 @@ impl WifiLink {
     }
 
     pub fn display_ssid(&self) -> &str {
-        match (self.ssid.is_empty(), self.redacted) {
-            (false, _) => &self.ssid,
-            (true, true) => "(hidden by macOS)",
-            (true, false) => "(unknown)",
+        match (visible_name(&self.ssid), self.redacted) {
+            (true, _) => &self.ssid,
+            (false, true) => "(hidden by macOS)",
+            (false, false) => "(unknown)",
         }
     }
 }
