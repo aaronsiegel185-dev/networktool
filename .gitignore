@@ -9,6 +9,13 @@ Thumbs.db
 *.log
 tmp/
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
 # Rust / GUI build output
 gui/target/
 **/*.rs.bk
