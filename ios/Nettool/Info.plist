@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>nettool</string>
+	<key>CFBundleName</key>
+	<string>nettool</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<!-- iOS 14 and later refuse local network traffic without this, and the
+	     refusal is silent - every scan and every call to the Mac just fails. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>nettool talks to a Mac on your network to capture packets and survey Wi-Fi, and probes hosts you ask it to.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_nettool._tcp</string>
+	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+</dict>
+</plist>

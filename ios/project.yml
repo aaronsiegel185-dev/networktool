@@ -1,0 +1,105 @@
+# XcodeGen project definition.
+#
+# The .xcodeproj is generated rather than committed: a project file is a merge
+# conflict waiting to happen, and everything that matters about it is here in
+# fifty readable lines.
+#
+#   brew install xcodegen && cd ios && xcodegen generate && open Nettool.xcodeproj
+name: Nettool
+options:
+  bundleIdPrefix: dev.nettool
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+packages:
+  NettoolKit:
+    path: NettoolKit
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.9"
+    # A free Apple ID can sign and install, but cannot provision entitlements.
+    # Automatic signing with your own team is what makes that work.
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  Nettool:
+    type: application
+    platform: iOS
+    sources:
+      - path: Nettool
+    dependencies:
+      - package: NettoolKit
+    info:
+      path: Nettool/Info.plist
+      properties:
+        CFBundleDisplayName: nettool
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Required from iOS 14: without it, every scan and every connection to
+        # the Mac fails silently rather than prompting.
+        NSLocalNetworkUsageDescription:
+          nettool talks to a Mac on your network to capture packets and survey
+          Wi-Fi, and probes hosts you ask it to.
+        NSBonjourServices:
+          - _nettool._tcp
+        # Captures arrive by AirDrop, Files, or a share sheet.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Packet capture
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.data
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.nettool.ios
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+      configs:
+        # The paid tier is a build configuration, not a runtime check: an
+        # entitlement the provisioning profile does not carry makes the install
+        # fail, so the free build must not reference it at all.
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+        Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: ""
+
+  # Same app, built with the Wi-Fi entitlement. Select this scheme once you have
+  # a paid account and have added the entitlement to the App ID.
+  NettoolEntitled:
+    type: application
+    platform: iOS
+    sources:
+      - path: Nettool
+    dependencies:
+      - package: NettoolKit
+    info:
+      path: Nettool/Info.plist
+    entitlements:
+      path: Nettool/Nettool.entitlements
+      properties:
+        com.apple.developer.networking.wifi-info: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.nettool.ios
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: NETTOOL_ENTITLED
+
+schemes:
+  Nettool:
+    build:
+      targets:
+        Nettool: all
+    test:
+      targets:
+        - NettoolKit/NettoolKitTests
+  NettoolEntitled:
+    build:
+      targets:
+        NettoolEntitled: all

@@ -872,6 +872,24 @@ def cmd_wifi_analyze(args):
     return 0
 
 
+def cmd_serve(args):
+    """Serve the diagnostics over HTTP, for the iOS app to drive."""
+    from . import server as servermod
+
+    host = "0.0.0.0" if args.lan else "127.0.0.1"
+    httpd = servermod.serve(host=host, port=args.port, token=args.token,
+                            capture_dir=args.directory, announce=not args.no_announce,
+                            verbose=args.verbose)
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        sys.stdout.write("\nstopping\n")
+    finally:
+        servermod.shutdown(httpd)
+    return 0
+
+
 # --- ping / trace / mtu ----------------------------------------------------
 
 def cmd_ping(args):
@@ -1121,6 +1139,19 @@ def build_parser():
     q.set_defaults(func=cmd_wifi_permission)
     wifi_parser.set_defaults(func=lambda a: (wifi_parser.print_help(), 0)[1],
                              wifi_command=None)
+
+    p = sub.add_parser("serve", help="serve the diagnostics over HTTP for the iOS app")
+    p.add_argument("-p", "--port", type=int, default=8765)
+    p.add_argument("--lan", action="store_true",
+                   help="listen on every interface so a phone can reach it "
+                        "(default is localhost only)")
+    p.add_argument("--token", help="pairing token to use (one is generated otherwise)")
+    p.add_argument("-d", "--directory", help="where captures are read and written "
+                                             "(default: the current directory)")
+    p.add_argument("--no-announce", action="store_true",
+                   help="do not advertise over Bonjour")
+    p.add_argument("-v", "--verbose", action="store_true", help="log every request")
+    p.set_defaults(func=cmd_serve)
 
     p = add_json(sub.add_parser("ping", help="ICMP echo with loss and jitter stats"))
     p.add_argument("host")

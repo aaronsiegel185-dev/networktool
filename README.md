@@ -186,6 +186,22 @@ Two macOS-specific caveats worth knowing:
   `iw survey` has no macOS equivalent, so the interference verdict there is based on
   neighbour count, overlap, signal and SNR.
 
+## iPhone app
+
+`ios/` holds a SwiftUI app that reads captures, decodes them, and drives a Mac
+running `nettool serve` for the two things iOS refuses any app: capturing
+packets and scanning for Wi-Fi networks. It is built so a free Apple ID can
+install it, with the one entitled feature behind a build flag rather than a
+runtime check. See [ios/README.md](ios/README.md).
+
+```bash
+python3 -m nettool serve --lan     # on the Mac; prints a pairing link
+```
+
+The server is read-only, needs a token on every request, binds to localhost
+unless `--lan` is passed, and lets no client-supplied string reach a shell or
+escape the capture directory.
+
 ## Commands
 
 ### Inventory

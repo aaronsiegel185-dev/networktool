@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Only the NettoolEntitled target uses this file. Apple grants this
+	     entitlement to paid accounts, and it is what lets the app read the name
+	     of the Wi-Fi network the phone is on. Building the plain Nettool target
+	     ignores it entirely, which is what makes a free Apple ID work. -->
+	<key>com.apple.developer.networking.wifi-info</key>
+	<true/>
+</dict>
+</plist>
