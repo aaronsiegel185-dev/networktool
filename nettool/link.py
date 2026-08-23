@@ -115,6 +115,7 @@ def attach_bpf(fd, ifname, buffer_size=BPF_DEFAULT_BUFFER, ioctl_fn=None):
     ioctl_fn = ioctl_fn or fcntl.ioctl
     request = struct.pack("16s16x", ifname.encode()[:15])
     size = max(BPF_MIN_BUFFER, min(int(buffer_size), 8 * 1024 * 1024))
+    requested = size
     attached = False
     last_error = None
     while size >= BPF_MIN_BUFFER:
@@ -131,22 +132,79 @@ def attach_bpf(fd, ifname, buffer_size=BPF_DEFAULT_BUFFER, ioctl_fn=None):
         except OSError as exc:
             last_error = exc
             if exc.errno == errno.ENXIO:
-                raise NetToolError(
-                    "no such interface: %s (check the name with `ifconfig -a`)" % ifname)
+                raise NetToolError(_no_such_device(ifname))
             if exc.errno not in BPF_RETRY_ERRNOS:
                 raise NetToolError("cannot attach to %s (BIOCSETIF): %s" % (ifname, exc))
             size //= 2
     if not attached:
+        # Last resort: let the kernel pick the buffer size itself. A descriptor that
+        # refuses every size may still attach when BIOCSBLEN is never issued.
+        try:
+            ioctl_fn(fd, BIOCSETIF, request)
+            attached = True
+            size = 0
+        except OSError as exc:
+            last_error = exc
+    if not attached:
+        if getattr(last_error, "errno", None) in (errno.EINVAL, errno.ENXIO):
+            # libpcap treats EINVAL from BIOCSETIF on macOS the same as ENXIO: the
+            # kernel has no BPF-capable device by that name.
+            raise NetToolError(_no_such_device(ifname, last_error))
         raise NetToolError(
             "cannot attach to %s: %s. Buffer sizes from %d down to %d bytes were all "
-            "refused." % (ifname, last_error, min(int(buffer_size), 8 * 1024 * 1024),
-                          BPF_MIN_BUFFER))
+            "refused." % (ifname, last_error, requested, BPF_MIN_BUFFER))
     try:
         buffer = bytearray(4)
         ioctl_fn(fd, BIOCGBLEN, buffer, True)
         return struct.unpack("I", bytes(buffer))[0]
     except OSError:
-        return size
+        return size or BPF_DEFAULT_BUFFER
+
+
+def _no_such_device(ifname, error=None):
+    """The message for an interface BPF will not attach to, with the ones that work."""
+    detail = " (%s)" % error if error else ""
+    message = ["%s cannot be captured on%s." % (ifname, detail)]
+    if IS_DARWIN:
+        message.append(
+            "macOS reports this for an interface that exists but has no BPF device - a "
+            "utun/VPN interface, a bridge member, an adapter that is not attached, or "
+            "simply the wrong name.")
+    try:
+        usable = capturable_interfaces()
+    except Exception:                          # never let diagnosis hide the real error
+        usable = []
+    if usable:
+        message.append("Interfaces that can be captured on: %s." % ", ".join(usable))
+    else:
+        message.append("Check the name with `nettool iface`.")
+    return " ".join(message)
+
+
+def capturable_interfaces(names=None):
+    """Which interfaces a BPF descriptor will actually attach to.
+
+    This is `tcpdump -D` in miniature: the only reliable way to know is to try, since
+    plenty of interfaces show up in ifconfig but have no BPF device behind them.
+    """
+    if not IS_DARWIN and not IS_LINUX:
+        return []
+    from . import iface as ifmod
+
+    if names is None:
+        try:
+            names = [info["name"] for info in ifmod.inventory()]
+        except NetToolError:
+            return []
+    usable = []
+    for name in names:
+        try:
+            link = open_link(name, promisc=False, snaplen=256, buffer_size=BPF_MIN_BUFFER)
+        except (NetToolError, OSError):
+            continue
+        usable.append(name)
+        link.close()
+    return usable
 
 
 def bpf_dlt_list(fd, ioctl_fn=None):
@@ -257,6 +315,8 @@ class PacketSocket(LinkSocket):
             self._sock.bind((ifname, 0))
         except OSError as exc:
             self._sock.close()
+            if exc.errno in (errno.ENODEV, errno.ENXIO):
+                raise NetToolError(_no_such_device(ifname, exc))
             raise NetToolError("cannot open %s: %s" % (ifname, exc))
         for option, value in ((socket.SO_RCVBUF, buffer_size), (SO_TIMESTAMPNS, 1)):
             try:

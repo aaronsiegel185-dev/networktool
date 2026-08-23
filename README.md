@@ -92,8 +92,15 @@ Two macOS-specific caveats worth knowing:
 ```bash
 nettool iface                 # interfaces, IPs, routes, DNS, error counters
 nettool iface -v              # plus IPv6 and the ARP cache
+sudo nettool iface --capturable   # only the interfaces a capture can attach to
 nettool iface --json
 ```
+
+`--capturable` is the answer to "which interface do I pass to `capture`?". Plenty of
+interfaces appear in `ifconfig` but have no packet-capture device behind them - VPN and
+`utun` interfaces, bridge members, adapters that are not attached - and on macOS trying
+one of those fails with a bare `EINVAL`. This tries each interface and lists the ones
+that work, the way `tcpdump -D` does.
 
 ### Health check
 

@@ -143,6 +143,28 @@ class StrictKernel(FakeKernel):
         return super(StrictKernel, self).ioctl(fd, request, arg, mutate)
 
 
+class BlenHostileKernel(FakeKernel):
+    """A kernel that refuses the attach whenever a buffer size was set first."""
+
+    def __init__(self):
+        super(BlenHostileKernel, self).__init__(max_buffer=1024 * 1024)
+        self.blen_set = False
+
+    def ioctl(self, fd, request, arg=0, mutate=False):
+        if request == link.BIOCSBLEN:
+            self.blen_set = True
+            return super(BlenHostileKernel, self).ioctl(fd, request, arg, mutate)
+        if request == link.BIOCSETIF:
+            if self.blen_set:
+                self.blen_set = False
+                self.calls.append(request)
+                raise OSError(errno.EINVAL, "Invalid argument")
+            self.attached = "en0"
+            self.calls.append(request)
+            return 0
+        return super(BlenHostileKernel, self).ioctl(fd, request, arg, mutate)
+
+
 class TestBpfAttach(unittest.TestCase):
     """The attach sequence is the part that actually failed on real hardware."""
 
@@ -180,7 +202,7 @@ class TestBpfAttach(unittest.TestCase):
         kernel = FakeKernel(interface="en1")
         with self.assertRaises(NetToolError) as caught:
             link.attach_bpf(3, "en0", ioctl_fn=kernel.ioctl)
-        self.assertIn("no such interface: en0", str(caught.exception))
+        self.assertIn("en0 cannot be captured on", str(caught.exception))
 
     def test_other_errors_are_not_retried(self):
         kernel = FakeKernel(max_buffer=0, attach_errno=errno.EPERM)
@@ -191,12 +213,29 @@ class TestBpfAttach(unittest.TestCase):
         self.assertEqual(kernel.calls.count(link.BIOCSETIF), 1)
 
     def test_exhausting_every_size_reports_the_range(self):
-        kernel = FakeKernel(max_buffer=0)          # nothing is ever allocatable
+        # ENOBUFS really is about memory, so the message names the sizes tried.
+        kernel = FakeKernel(max_buffer=0, attach_errno=errno.ENOBUFS)
         with self.assertRaises(NetToolError) as caught:
             link.attach_bpf(3, "en0", buffer_size=64 * 1024, ioctl_fn=kernel.ioctl)
         message = str(caught.exception)
         self.assertIn("65536", message)
         self.assertIn(str(link.BPF_MIN_BUFFER), message)
+
+    def test_einval_everywhere_is_reported_as_an_uncapturable_interface(self):
+        # macOS returns EINVAL for an interface with no BPF device, which is what
+        # libpcap treats as "no such device" - the buffer was never the problem.
+        kernel = FakeKernel(max_buffer=0, attach_errno=errno.EINVAL)
+        with self.assertRaises(NetToolError) as caught:
+            link.attach_bpf(3, "en9", buffer_size=64 * 1024, ioctl_fn=kernel.ioctl)
+        message = str(caught.exception)
+        self.assertIn("en9 cannot be captured on", message)
+        self.assertNotIn("Buffer sizes", message)
+
+    def test_falls_back_to_attaching_without_setting_a_buffer(self):
+        kernel = BlenHostileKernel()
+        size = link.attach_bpf(3, "en0", buffer_size=512 * 1024, ioctl_fn=kernel.ioctl)
+        self.assertEqual(kernel.attached, "en0")
+        self.assertGreater(size, 0)
 
 
 class TestSnaplenProgram(unittest.TestCase):
@@ -213,6 +252,20 @@ class TestSnaplenProgram(unittest.TestCase):
         program, _instructions = link.bpf_snaplen_program(65535)
         self.assertEqual(len(program), 16)
         self.assertEqual(link.BIOCSETF & 0xFFFFFFFF, 0x80104267)
+
+
+class TestCapturableInterfaces(unittest.TestCase):
+    def test_lists_interfaces_that_actually_attach(self):
+        from nettool.util import is_root
+
+        usable = link.capturable_interfaces()
+        self.assertIsInstance(usable, list)
+        if is_root() and sys.platform.startswith("linux"):
+            # Every up interface on Linux takes an AF_PACKET socket.
+            self.assertIn("lo", usable)
+
+    def test_unknown_names_are_skipped_not_fatal(self):
+        self.assertEqual(link.capturable_interfaces(["definitely-not-real0"]), [])
 
 
 class TestPlatformSelection(unittest.TestCase):

@@ -32,6 +32,20 @@ def _emit_json(payload):
 # --- iface -----------------------------------------------------------------
 
 def cmd_iface(args):
+    if args.capturable:
+        from .link import capturable_interfaces
+
+        usable = capturable_interfaces()
+        if args.json:
+            _emit_json({"capturable": usable})
+            return 0
+        section("interfaces a capture can attach to")
+        if usable:
+            table([[name] for name in usable], ["interface"])
+        else:
+            sys.stdout.write("none - raw packet access needs root or BPF group "
+                             "membership\n")
+        return 0
     interfaces = ifmod.inventory()
     if args.name:
         interfaces = [i for i in interfaces if i["name"] == args.name]
@@ -846,6 +860,9 @@ def build_parser():
     p.add_argument("name", nargs="?", help="only this interface")
     p.add_argument("-a", "--all", action="store_true", help="include down interfaces")
     p.add_argument("-v", "--verbose", action="store_true", help="also show IPv6 and ARP")
+    p.add_argument("--capturable", action="store_true",
+                   help="list only the interfaces a capture can actually attach to "
+                        "(needs root or BPF access)")
     p.set_defaults(func=cmd_iface)
 
     p = add_json(sub.add_parser("discover", help="find live hosts on the LAN"))
