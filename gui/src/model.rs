@@ -869,6 +869,19 @@ impl Bss {
     }
 }
 
+/// `wifi permission --json`: the macOS Location Services grant that unhides names.
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct LocationPermission {
+    #[serde(default)]
+    pub services_enabled: bool,
+    #[serde(default)]
+    pub status: i64,
+    #[serde(default)]
+    pub status_name: String,
+    #[serde(default)]
+    pub granted: bool,
+}
+
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct WifiScanReport {
     #[serde(default)]

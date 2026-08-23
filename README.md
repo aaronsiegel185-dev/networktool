@@ -84,9 +84,24 @@ Two macOS-specific caveats worth knowing:
   -getairportnetwork` and the SystemConfiguration store, which are not gated, so
   the link you are on is named either way. Neighbouring names stay blank - shown as
   `(hidden by macOS)`, to distinguish them from an AP that really is hiding its
-  SSID - until you turn nettool (or Terminal) on under System Settings > Privacy &
-  Security > Location Services. Signal, noise, channel, security and the whole
-  interference analysis are unaffected.
+  SSID - until nettool is granted Location Services.
+
+  macOS only lists an app under Location Services once that app has *asked*, so
+  there is nothing to tick until you trigger the prompt:
+
+  ```bash
+  python3 -m nettool wifi permission            # what the current grant is
+  python3 -m nettool wifi permission --request  # make macOS show the prompt
+  ```
+
+  The Wi-Fi tab shows the same thing as an "Ask macOS for permission" button
+  whenever a result comes back blanked. Whoever launched nettool owns the grant:
+  from a terminal it is recorded against Terminal or iTerm, from the bundle
+  against nettool.app. Run it without `sudo` - a prompt answered as root leaves
+  your own account exactly as blocked as before. macOS asks only once; after that
+  the answer is changed in System Settings > Privacy & Security > Location
+  Services. Signal, noise, channel, security and the whole interference analysis
+  are unaffected throughout.
 * **No airtime survey.** The "60% of airtime is undecodable" line that Linux gets from
   `iw survey` has no macOS equivalent, so the interference verdict there is based on
   neighbour count, overlap, signal and SNR.

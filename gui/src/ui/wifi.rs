@@ -10,7 +10,7 @@ use super::{
 };
 use super::netmap;
 use crate::model::{
-    Bss, DiscoverReport, IfaceReport, SurveyEntry, WifiAnalyzeReport, WifiLink,
+    Bss, DiscoverReport, IfaceReport, LocationPermission, SurveyEntry, WifiAnalyzeReport, WifiLink,
     WifiScanReport, WirelessSurvey,
 };
 use crate::runner::{args, Job, JobMode, Settings};
@@ -64,6 +64,10 @@ pub struct WifiTab {
     survey_job: Option<Job>,
     survey_report: Option<WirelessSurvey>,
     survey_error: Option<String>,
+
+    permission_job: Option<Job>,
+    permission_report: Option<LocationPermission>,
+    permission_error: Option<String>,
 }
 
 impl Default for WifiTab {
@@ -92,6 +96,9 @@ impl Default for WifiTab {
             hosts_job: None,
             hosts_report: None,
             hosts_error: None,
+            permission_job: None,
+            permission_report: None,
+            permission_error: None,
             survey_path: String::new(),
             survey_job: None,
             survey_report: None,
@@ -203,6 +210,8 @@ impl WifiTab {
                              &mut self.hosts_error);
         changed |= poll_into(&mut self.survey_job, &mut self.survey_report,
                              &mut self.survey_error);
+        changed |= poll_into(&mut self.permission_job, &mut self.permission_report,
+                             &mut self.permission_error);
 
         if let Some(job) = self.monitor_job.as_mut() {
             let updated = job.poll();
@@ -292,6 +301,7 @@ impl WifiTab {
         }
         if self.names_hidden() {
             hidden_names_hint(ui);
+            self.permission_row(ui, settings);
         }
         ui.add_space(6.0);
 
@@ -652,6 +662,57 @@ impl WifiTab {
         }
         ui.add_space(6.0);
         job_footer(ui, &self.link_job, &self.link_error);
+    }
+
+    /// The one control that can change the permission, and what came of pressing it.
+    ///
+    /// macOS only lists an app under Location Services once the app has asked, so
+    /// there is nothing the user can go and tick until this button has run.
+    /// Only reached when a result actually came back blanked, which only macOS
+    /// does - so this needs no platform check of its own.
+    fn permission_row(&mut self, ui: &mut egui::Ui, settings: &Settings) {
+        let running = self.permission_job.as_ref().map(|j| j.running()).unwrap_or(false);
+        ui.horizontal_wrapped(|ui| {
+            if running {
+                ui.spinner();
+                ui.label(
+                    egui::RichText::new("waiting for the macOS prompt...")
+                        .size(11.0)
+                        .color(widgets::MUTED),
+                );
+            } else if ui
+                .button("Ask macOS for permission")
+                .on_hover_text(
+                    "Shows the system location prompt. macOS will only ask once - after                      that the answer is changed in System Settings.",
+                )
+                .clicked()
+            {
+                self.permission_error = None;
+                self.permission_report = None;
+                // Deliberately not through sudo: macOS records the grant against
+                // the user who was asked, so a prompt answered as root would
+                // leave the app itself exactly as blocked as before.
+                let as_me = Settings { use_sudo: false, ..settings.clone() };
+                self.permission_job = Some(Job::spawn(
+                    &as_me,
+                    "wifi permission",
+                    args(&["wifi", "permission", "--request", "--json"]),
+                ));
+            }
+            if let Some(report) = self.permission_report.as_ref() {
+                if report.granted {
+                    ui.colored_label(widgets::OK, "granted - rescan to see the names");
+                } else {
+                    ui.colored_label(
+                        widgets::WARN,
+                        format!("still {} - grant it in System Settings", report.status_name),
+                    );
+                }
+            }
+            if let Some(err) = self.permission_error.as_ref() {
+                ui.colored_label(widgets::CRIT, err);
+            }
+        });
     }
 
     /// True once something we have actually fetched came back with a blanked name.

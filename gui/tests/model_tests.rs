@@ -376,3 +376,16 @@ fn distinguishes_a_hidden_ssid_from_one_macos_blanked() {
         serde_json::from_str(r#"{"ssid":"","connected":true,"redacted":true}"#).unwrap();
     assert_eq!(blanked_link.display_ssid(), "(hidden by macOS)");
 }
+
+#[test]
+fn parses_the_location_permission_report() {
+    let granted: LocationPermission = load("wifi_permission.json");
+    assert!(granted.granted);
+    assert_eq!(granted.status, 4);
+    assert!(granted.services_enabled);
+
+    let refused: LocationPermission =
+        serde_json::from_str(r#"{"status":2,"status_name":"denied","granted":false}"#).unwrap();
+    assert!(!refused.granted);
+    assert_eq!(refused.status_name, "denied");
+}

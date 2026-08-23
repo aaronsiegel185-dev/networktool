@@ -691,6 +691,53 @@ def cmd_wifi_link(args):
     return 0
 
 
+def cmd_wifi_permission(args):
+    """Show, and optionally ask for, the macOS grant that unhides network names."""
+    if sys.platform != "darwin":
+        raise NetToolError("Location Services is a macOS concept; nothing to grant here")
+    from . import maclocation
+
+    try:
+        enabled = maclocation.services_enabled()
+        if args.request:
+            code, name = maclocation.request(timeout=args.timeout)
+        else:
+            code, name = maclocation.status()
+    except maclocation.LocationError as exc:
+        raise NetToolError(str(exc))
+
+    granted = code in maclocation.GRANTED
+    if args.json:
+        _emit_json({"services_enabled": enabled, "status": code, "status_name": name,
+                    "granted": granted})
+        return 0
+
+    section("location services")
+    table([["system-wide", "on" if enabled else "off"],
+           ["this app", name],
+           ["network names", "visible" if granted else "hidden"]],
+          ["field", "value"])
+    if granted:
+        sys.stdout.write("\nNetwork names are visible to whatever launched nettool.\n")
+        return 0
+    if not enabled:
+        sys.stdout.write("\nLocation Services is off system-wide. Turn it on in System "
+                         "Settings > Privacy & Security > Location Services first.\n")
+        return 1
+    if code == 0 and not args.request:
+        sys.stdout.write("\nmacOS has never asked. Run `wifi permission --request` to "
+                         "make it ask - the prompt is attributed to whatever launched "
+                         "nettool (your terminal, or nettool.app).\n")
+        return 1
+    if code == 2:
+        sys.stdout.write("\nPermission was refused earlier, so macOS will not ask again. "
+                         "Turn it back on in System Settings > Privacy & Security > "
+                         "Location Services.\n")
+        return 1
+    sys.stdout.write("\n%s\n" % wifimod.HIDDEN_NAMES_HINT)
+    return 1
+
+
 def cmd_wifi_survey(args):
     surveys = wifimod.survey_dump(args.interface)
     if args.json:
@@ -1028,6 +1075,16 @@ def build_parser():
     q.add_argument("-i", "--interface")
     q.add_argument("--cached", action="store_true")
     q.set_defaults(func=cmd_wifi_analyze)
+
+    q = add_json(wifi_sub.add_parser(
+        "permission",
+        help="macOS: show or request the Location Services grant that reveals "
+             "network names"))
+    q.add_argument("--request", action="store_true",
+                   help="ask macOS for the permission (shows the system prompt)")
+    q.add_argument("-t", "--timeout", type=float, default=15.0,
+                   help="seconds to wait for an answer to the prompt")
+    q.set_defaults(func=cmd_wifi_permission)
     wifi_parser.set_defaults(func=lambda a: (wifi_parser.print_help(), 0)[1],
                              wifi_command=None)
 

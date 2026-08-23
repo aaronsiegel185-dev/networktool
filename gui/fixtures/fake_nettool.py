@@ -67,7 +67,8 @@ def main(argv):
         if sub == "link":
             return wifi_link()
         return emit({"scan": "wifi_scan.json", "survey": "wifi_survey.json",
-                     "analyze": "wifi_analyze.json"}.get(sub, "wifi_scan.json"))
+                     "analyze": "wifi_analyze.json",
+                     "permission": "wifi_permission.json"}.get(sub, "wifi_scan.json"))
     sys.stderr.write("error: fixture replay does not implement %r\n" % command)
     return 2
 
