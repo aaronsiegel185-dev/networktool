@@ -54,6 +54,7 @@ def _ioc(direction, group, number, length):
 
 
 BIOCGBLEN = _ioc(IOC_OUT, "B", 102, 4)
+BIOCSETF = _ioc(IOC_IN, "B", 103, 16)           # struct bpf_program
 BIOCSBLEN = _ioc(IOC_INOUT, "B", 102, 4)
 BIOCFLUSH = _ioc(IOC_VOID, "B", 104, 0)
 BIOCPROMISC = _ioc(IOC_VOID, "B", 105, 0)
@@ -67,6 +68,75 @@ BIOCSSEESENT = _ioc(IOC_IN, "B", 119, 4)
 # struct bpf_hdr { struct timeval32 bh_tstamp; u_int32 bh_caplen, bh_datalen;
 #                  u_short bh_hdrlen; }
 BPF_HDR = struct.Struct("=iiIIH")
+
+# macOS caps a BPF buffer at debug.bpf_maxbufsize (512 KiB by default) and refuses the
+# interface attach when it cannot allocate what was asked for, so start there and shrink.
+BPF_DEFAULT_BUFFER = 512 * 1024
+BPF_MIN_BUFFER = 4096
+# Errors that mean "that buffer was too big", as opposed to a real failure.
+BPF_RETRY_ERRNOS = (errno.ENOBUFS, errno.EINVAL, errno.ENOMEM)
+
+
+def attach_bpf(fd, ifname, buffer_size=BPF_DEFAULT_BUFFER, ioctl_fn=None):
+    """Size the buffer and attach the descriptor to `ifname`.
+
+    This follows libpcap's dance: BIOCSETIF fails when the kernel cannot allocate the
+    requested buffer, and the only way to find a size it will accept is to halve and
+    retry. Returns the buffer length the kernel actually gave us.
+    """
+    import fcntl
+
+    ioctl_fn = ioctl_fn or fcntl.ioctl
+    request = struct.pack("16s16x", ifname.encode()[:15])
+    size = max(BPF_MIN_BUFFER, min(int(buffer_size), 8 * 1024 * 1024))
+    attached = False
+    last_error = None
+    while size >= BPF_MIN_BUFFER:
+        try:
+            buffer = bytearray(struct.pack("I", size))
+            ioctl_fn(fd, BIOCSBLEN, buffer, True)
+        except OSError as exc:
+            # Some kernels reject the size outright; the attach below may still work.
+            last_error = exc
+        try:
+            ioctl_fn(fd, BIOCSETIF, request)
+            attached = True
+            break
+        except OSError as exc:
+            last_error = exc
+            if exc.errno == errno.ENXIO:
+                raise NetToolError(
+                    "no such interface: %s (check the name with `ifconfig -a`)" % ifname)
+            if exc.errno not in BPF_RETRY_ERRNOS:
+                raise NetToolError("cannot attach to %s (BIOCSETIF): %s" % (ifname, exc))
+            size //= 2
+    if not attached:
+        raise NetToolError(
+            "cannot attach to %s: %s. Buffer sizes from %d down to %d bytes were all "
+            "refused." % (ifname, last_error, min(int(buffer_size), 8 * 1024 * 1024),
+                          BPF_MIN_BUFFER))
+    try:
+        buffer = bytearray(4)
+        ioctl_fn(fd, BIOCGBLEN, buffer, True)
+        return struct.unpack("I", bytes(buffer))[0]
+    except OSError:
+        return size
+
+
+def bpf_snaplen_program(snaplen):
+    """A one-instruction BPF filter that accepts every packet, truncated to `snaplen`.
+
+    BPF has no BIOCSSNAPLEN: the accept length is the filter's return value.
+    """
+    import ctypes
+
+    # struct bpf_insn { u_short code; u_char jt, jf; bpf_u_int32 k; }
+    # BPF_RET | BPF_K == 0x06, k = number of bytes to keep.
+    instructions = ctypes.create_string_buffer(
+        struct.pack("=HBBI", 0x06, 0, 0, max(1, int(snaplen))))
+    # struct bpf_program { u_int bf_len; struct bpf_insn *bf_insns; }
+    program = struct.pack("@IP", 1, ctypes.addressof(instructions))
+    return program, instructions
 
 
 def bpf_align(value):
@@ -183,46 +253,56 @@ class PacketSocket(LinkSocket):
 class BpfSocket(LinkSocket):
     """macOS / BSD /dev/bpf back end."""
 
-    def __init__(self, ifname, promisc=True, snaplen=65535, buffer_size=1024 * 1024):
+    def __init__(self, ifname, promisc=True, snaplen=65535, buffer_size=None):
         import fcntl
 
         self.ifname = ifname
         self.snaplen = snaplen
         self._fcntl = fcntl
         self._fd = self._open_device()
+        step = "setup"
         try:
-            # The buffer length must be set before the interface is attached.
-            requested = max(4096, min(buffer_size, 8 * 1024 * 1024))
-            size = bytearray(struct.pack("I", requested))
-            fcntl.ioctl(self._fd, BIOCSBLEN, size, True)
-            self.buffer_len = struct.unpack("I", bytes(size))[0]
+            self.buffer_len = attach_bpf(
+                self._fd, ifname, buffer_size or BPF_DEFAULT_BUFFER)
 
-            fcntl.ioctl(self._fd, BIOCSETIF, struct.pack("16s16x", ifname.encode()[:15]))
+            step = "BIOCIMMEDIATE"
             fcntl.ioctl(self._fd, BIOCIMMEDIATE, struct.pack("I", 1))
             # We build complete Ethernet frames ourselves when injecting.
+            step = "BIOCSHDRCMPLT"
             fcntl.ioctl(self._fd, BIOCSHDRCMPLT, struct.pack("I", 1))
-            try:
-                fcntl.ioctl(self._fd, BIOCSSEESENT, struct.pack("I", 1))
-            except OSError:
-                pass
-            if promisc:
-                try:
-                    fcntl.ioctl(self._fd, BIOCPROMISC)
-                except OSError as exc:
-                    sys.stderr.write("warning: could not enable promiscuous mode: %s\n" % exc)
-            dlt = bytearray(4)
-            try:
-                fcntl.ioctl(self._fd, BIOCGDLT, dlt, True)
-                self.linktype = struct.unpack("I", bytes(dlt))[0]
-            except OSError:
-                self.linktype = DLT_EN10MB
-            try:
-                fcntl.ioctl(self._fd, BIOCFLUSH)
-            except OSError:
-                pass
+        except NetToolError:
+            os.close(self._fd)
+            raise
         except OSError as exc:
             os.close(self._fd)
-            raise NetToolError("cannot capture on %s: %s" % (ifname, exc))
+            raise NetToolError("cannot capture on %s (%s): %s" % (ifname, step, exc))
+
+        # Everything below is a refinement: warn, but keep the capture.
+        try:
+            fcntl.ioctl(self._fd, BIOCSSEESENT, struct.pack("I", 1))
+        except OSError:
+            pass
+        if snaplen and snaplen < 262144:
+            try:
+                program, _instructions = bpf_snaplen_program(snaplen)
+                fcntl.ioctl(self._fd, BIOCSETF, program)
+            except (OSError, ValueError):
+                pass                      # capture full frames rather than none
+        if promisc:
+            try:
+                fcntl.ioctl(self._fd, BIOCPROMISC)
+            except OSError as exc:
+                sys.stderr.write("warning: could not enable promiscuous mode: %s\n" % exc)
+        dlt = bytearray(4)
+        try:
+            fcntl.ioctl(self._fd, BIOCGDLT, dlt, True)
+            self.linktype = struct.unpack("I", bytes(dlt))[0]
+        except OSError:
+            self.linktype = DLT_EN10MB
+        try:
+            fcntl.ioctl(self._fd, BIOCFLUSH)
+        except OSError:
+            pass
 
     def _open_device(self):
         last_error = None
@@ -284,4 +364,4 @@ def open_link(ifname, promisc=True, snaplen=65535, buffer_size=None):
     # On macOS root is not required: opening /dev/bpf* succeeds for any user in the
     # access_bpf group (see macos/install-bpf-access.sh). Let the open attempt decide,
     # so people who installed the helper are not turned away here.
-    return BpfSocket(ifname, promisc, snaplen, buffer_size or 1024 * 1024)
+    return BpfSocket(ifname, promisc, snaplen, buffer_size or BPF_DEFAULT_BUFFER)

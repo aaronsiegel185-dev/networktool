@@ -5,6 +5,7 @@ wrong - the ioctl numbers and the batched read format - are pure arithmetic and 
 parsing, so both are pinned here against the values in <net/bpf.h>.
 """
 
+import errno
 import os
 import struct
 import sys
@@ -94,6 +95,124 @@ class TestBpfBufferParsing(unittest.TestCase):
         buffer = bpf_record(b"E" * 50, hdrlen=24)
         packets = link.parse_bpf_buffer(buffer)
         self.assertEqual(packets[0][0], b"E" * 50)
+
+
+class FakeKernel(object):
+    """A stand-in for macOS's BPF ioctls, with a cap on the buffer it will allocate."""
+
+    def __init__(self, max_buffer=64 * 1024, attach_errno=errno.EINVAL,
+                 interface="en0"):
+        self.max_buffer = max_buffer
+        self.attach_errno = attach_errno
+        self.interface = interface
+        self.buffer_len = 0
+        self.attached = None
+        self.calls = []
+
+    def ioctl(self, fd, request, arg=0, mutate=False):
+        self.calls.append(request)
+        if request == link.BIOCSBLEN:
+            # macOS records the request here and only discovers it cannot allocate
+            # the memory when the interface is attached - which is why the retry
+            # loop exists at all.
+            self.buffer_len = struct.unpack("I", bytes(arg))[0]
+            arg[:] = struct.pack("I", self.buffer_len)
+            return 0
+        if request == link.BIOCSETIF:
+            name = arg[:16].split(b"\x00")[0].decode()
+            if name != self.interface:
+                raise OSError(errno.ENXIO, "Device not configured")
+            if self.buffer_len > self.max_buffer:
+                raise OSError(self.attach_errno, "Invalid argument")
+            self.attached = name
+            return 0
+        if request == link.BIOCGBLEN:
+            arg[:] = struct.pack("I", self.buffer_len)
+            return 0
+        return 0
+
+
+class StrictKernel(FakeKernel):
+    """A kernel that refuses BIOCSBLEN outright but still attaches."""
+
+    def ioctl(self, fd, request, arg=0, mutate=False):
+        if request == link.BIOCSBLEN:
+            raise OSError(errno.EINVAL, "Invalid argument")
+        if request == link.BIOCGBLEN:
+            raise OSError(errno.EINVAL, "Invalid argument")
+        return super(StrictKernel, self).ioctl(fd, request, arg, mutate)
+
+
+class TestBpfAttach(unittest.TestCase):
+    """The attach sequence is the part that actually failed on real hardware."""
+
+    def test_shrinks_the_buffer_until_the_attach_succeeds(self):
+        kernel = FakeKernel(max_buffer=64 * 1024)
+        size = link.attach_bpf(3, "en0", buffer_size=1024 * 1024,
+                               ioctl_fn=kernel.ioctl)
+        self.assertEqual(kernel.attached, "en0")
+        self.assertEqual(size, 64 * 1024)
+        self.assertIn(link.BIOCSETIF, kernel.calls)
+        # It must have tried more than once to get there.
+        self.assertGreater(kernel.calls.count(link.BIOCSETIF), 1)
+
+    def test_first_attempt_is_used_when_the_kernel_is_happy(self):
+        kernel = FakeKernel(max_buffer=8 * 1024 * 1024)
+        size = link.attach_bpf(3, "en0", buffer_size=512 * 1024,
+                               ioctl_fn=kernel.ioctl)
+        self.assertEqual(size, 512 * 1024)
+        self.assertEqual(kernel.calls.count(link.BIOCSETIF), 1)
+
+    def test_enobufs_is_retried_too(self):
+        kernel = FakeKernel(max_buffer=32 * 1024, attach_errno=errno.ENOBUFS)
+        size = link.attach_bpf(3, "en0", buffer_size=1024 * 1024,
+                               ioctl_fn=kernel.ioctl)
+        self.assertEqual(size, 32 * 1024)
+
+    def test_attaches_even_when_the_buffer_cannot_be_set(self):
+        kernel = StrictKernel(max_buffer=1024 * 1024)
+        size = link.attach_bpf(3, "en0", buffer_size=256 * 1024,
+                               ioctl_fn=kernel.ioctl)
+        self.assertEqual(kernel.attached, "en0")
+        self.assertEqual(size, 256 * 1024)
+
+    def test_unknown_interface_says_so(self):
+        kernel = FakeKernel(interface="en1")
+        with self.assertRaises(NetToolError) as caught:
+            link.attach_bpf(3, "en0", ioctl_fn=kernel.ioctl)
+        self.assertIn("no such interface: en0", str(caught.exception))
+
+    def test_other_errors_are_not_retried(self):
+        kernel = FakeKernel(max_buffer=0, attach_errno=errno.EPERM)
+        with self.assertRaises(NetToolError) as caught:
+            link.attach_bpf(3, "en0", ioctl_fn=kernel.ioctl)
+        message = str(caught.exception)
+        self.assertIn("BIOCSETIF", message)
+        self.assertEqual(kernel.calls.count(link.BIOCSETIF), 1)
+
+    def test_exhausting_every_size_reports_the_range(self):
+        kernel = FakeKernel(max_buffer=0)          # nothing is ever allocatable
+        with self.assertRaises(NetToolError) as caught:
+            link.attach_bpf(3, "en0", buffer_size=64 * 1024, ioctl_fn=kernel.ioctl)
+        message = str(caught.exception)
+        self.assertIn("65536", message)
+        self.assertIn(str(link.BPF_MIN_BUFFER), message)
+
+
+class TestSnaplenProgram(unittest.TestCase):
+    def test_encodes_a_single_return_instruction(self):
+        program, instructions = link.bpf_snaplen_program(96)
+        length, _pointer = struct.unpack("@IP", program)
+        self.assertEqual(length, 1)
+        code, jt, jf, k = struct.unpack("=HBBI", instructions.raw[:8])
+        self.assertEqual(code, 0x06)               # BPF_RET | BPF_K
+        self.assertEqual((jt, jf), (0, 0))
+        self.assertEqual(k, 96)
+
+    def test_program_struct_is_the_size_the_ioctl_encodes(self):
+        program, _instructions = link.bpf_snaplen_program(65535)
+        self.assertEqual(len(program), 16)
+        self.assertEqual(link.BIOCSETF & 0xFFFFFFFF, 0x80104267)
 
 
 class TestPlatformSelection(unittest.TestCase):
