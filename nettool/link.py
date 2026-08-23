@@ -277,7 +277,11 @@ def open_link(ifname, promisc=True, snaplen=65535, buffer_size=None):
     """Open a raw link-layer handle on `ifname` for the current platform."""
     if not (IS_LINUX or IS_DARWIN or "bsd" in sys.platform):
         raise NetToolError("raw packet capture is not implemented on %s" % sys.platform)
-    require_root("raw packet access")
     if IS_LINUX:
+        # AF_PACKET is root-only, so say so before the socket call fails obscurely.
+        require_root("Packet capture")
         return PacketSocket(ifname, promisc, snaplen, buffer_size or 4 * 1024 * 1024)
+    # On macOS root is not required: opening /dev/bpf* succeeds for any user in the
+    # access_bpf group (see macos/install-bpf-access.sh). Let the open attempt decide,
+    # so people who installed the helper are not turned away here.
     return BpfSocket(ifname, promisc, snaplen, buffer_size or 1024 * 1024)

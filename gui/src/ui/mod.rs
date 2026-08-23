@@ -150,15 +150,22 @@ pub fn job_footer(ui: &mut egui::Ui, job: &Option<Job>, error: &Option<String>) 
 }
 
 /// Hint shown when a feature needs privileges the app may not have.
+///
+/// macOS has a tidier answer than sudo - the BPF access helper - so name that first.
 pub fn root_hint(ui: &mut egui::Ui, what: &str, use_sudo: bool) {
     if use_sudo || running_as_root() {
         return;
     }
-    ui.label(
-        egui::RichText::new(format!(
-            "{what} needs root - enable \"run via sudo\" in Settings, or start the GUI with sudo."
-        ))
-        .color(widgets::WARN)
-        .size(11.0),
-    );
+    let advice = if cfg!(target_os = "macos") {
+        format!(
+            "{what} needs access to /dev/bpf* - run `sudo macos/install-bpf-access.sh` \
+             once, or enable \"run via sudo\" in Settings."
+        )
+    } else {
+        format!(
+            "{what} needs root - enable \"run via sudo\" in Settings, or start the GUI \
+             with sudo."
+        )
+    };
+    ui.label(egui::RichText::new(advice).color(widgets::WARN).size(11.0));
 }

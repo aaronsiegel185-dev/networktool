@@ -20,12 +20,25 @@ def is_root():
     return hasattr(os, "geteuid") and os.geteuid() == 0
 
 
+IS_DARWIN = sys.platform == "darwin"
+
+
 def require_root(what):
-    if not is_root():
+    """Raise a NetToolError naming the fix for *this* platform."""
+    if is_root():
+        return
+    if IS_DARWIN:
         raise NetToolError(
-            "%s needs raw socket access; re-run with sudo (or grant "
-            "CAP_NET_RAW+CAP_NET_ADMIN to the python binary)." % what
+            "%s needs access to /dev/bpf*. Either re-run with sudo, or install the "
+            "BPF access helper once so your user can capture without sudo:\n"
+            "    sudo ./gui/macos/install-bpf-access.sh   (then log out and back in)"
+            % what
         )
+    raise NetToolError(
+        "%s needs root. Either re-run with sudo, or grant the capabilities once:\n"
+        "    sudo setcap cap_net_raw,cap_net_admin=eip "
+        "\"$(readlink -f \"$(which python3)\")\"" % what
+    )
 
 
 def require_linux(what):
