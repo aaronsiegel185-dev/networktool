@@ -23,7 +23,10 @@ public struct StreamSide: Sendable {
     }
 }
 
-public struct Stream: Sendable {
+/// Not `Stream`: Foundation already has one, as the base class of InputStream
+/// and OutputStream, so the bare name is ambiguous in any file that imports
+/// SwiftUI or Foundation - which is all of them.
+public struct PacketStream: Sendable {
     public let key: String
     public let clientToServer: StreamSide
     public let serverToClient: StreamSide
@@ -39,7 +42,7 @@ public enum FollowStream {
     /// showing what actually arrived in the order it arrived is the more honest
     /// answer than silently repairing it.
     public static func follow(streamKey: String, in packets: [DecodedPacket],
-                              bytesFor: (DecodedPacket) -> [UInt8]) -> Stream? {
+                              bytesFor: (DecodedPacket) -> [UInt8]) -> PacketStream? {
         let members = packets.filter { $0.streamKey == streamKey }
         guard let first = members.first else { return nil }
 
@@ -57,7 +60,7 @@ public enum FollowStream {
                 serverBytes += payload
             }
         }
-        return Stream(
+        return PacketStream(
             key: streamKey,
             clientToServer: StreamSide(label: clientLabel, bytes: clientBytes),
             serverToClient: StreamSide(label: serverLabel, bytes: serverBytes),

@@ -42,50 +42,77 @@ public actor PortScanner {
     }
 
     static func probe(host: String, port: Int, timeout: TimeInterval) async -> PortResult {
-        let started = Date()
         let service = PacketDecoder.services[UInt16(clamping: port)]
         guard let endpointPort = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else {
             return PortResult(port: port, isOpen: false, service: service, milliseconds: 0)
         }
-        let connection = NWConnection(host: NWEndpoint.Host(host), port: endpointPort,
-                                      using: .tcp)
         return await withCheckedContinuation { continuation in
-            // The continuation must be resumed exactly once, and both the state
-            // handler and the timeout race to do it.
-            let finished = Locked(false)
-            func finish(_ isOpen: Bool) {
-                guard finished.exchange(true) == false else { return }
-                connection.cancel()
-                continuation.resume(returning: PortResult(
-                    port: port, isOpen: isOpen, service: service,
-                    milliseconds: Date().timeIntervalSince(started) * 1000))
-            }
-            connection.stateUpdateHandler = { state in
-                switch state {
-                case .ready: finish(true)
-                case .failed, .cancelled: finish(false)
-                case .waiting: finish(false)     // refused, or no route
-                default: break
-                }
-            }
-            connection.start(queue: .global(qos: .userInitiated))
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { finish(false) }
+            let probe = Probe(port: port, service: service, continuation: continuation)
+            probe.start(host: host, port: endpointPort, timeout: timeout)
         }
     }
 }
 
-/// A tiny mutex, so a continuation cannot be resumed twice.
-final class Locked<Value>: @unchecked Sendable {
-    private var value: Value
+/// One port probe: owns the connection, and resumes its continuation exactly once.
+///
+/// A class rather than a local function, because the state handler and the
+/// timeout race to finish the probe from two different queues. Resuming a
+/// continuation twice is a crash, not a warning, so the "only once" has to be
+/// enforced by something with a lock rather than by the order things happen in.
+private final class Probe: @unchecked Sendable {
     private let lock = NSLock()
+    private var continuation: CheckedContinuation<PortResult, Never>?
+    private var connection: NWConnection?
+    private let port: Int
+    private let service: String?
+    private let started = Date()
 
-    init(_ value: Value) { self.value = value }
+    init(port: Int, service: String?,
+         continuation: CheckedContinuation<PortResult, Never>) {
+        self.port = port
+        self.service = service
+        self.continuation = continuation
+    }
 
-    func exchange(_ new: Value) -> Value {
+    func start(host: String, port endpointPort: NWEndpoint.Port, timeout: TimeInterval) {
+        let connection = NWConnection(host: NWEndpoint.Host(host), port: endpointPort,
+                                      using: .tcp)
         lock.lock()
-        defer { lock.unlock() }
-        let old = value
-        value = new
-        return old
+        self.connection = connection
+        lock.unlock()
+
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                self?.finish(open: true)
+            case .failed, .cancelled:
+                self?.finish(open: false)
+            case .waiting:
+                // Refused, or no route to the host - either way, not open.
+                self?.finish(open: false)
+            default:
+                break
+            }
+        }
+        connection.start(queue: .global(qos: .userInitiated))
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
+            self?.finish(open: false)
+        }
+    }
+
+    private func finish(open: Bool) {
+        lock.lock()
+        let pending = continuation
+        let live = connection
+        continuation = nil
+        connection = nil
+        lock.unlock()
+
+        // Whoever got here second finds nothing to do, which is the point.
+        guard let pending else { return }
+        live?.cancel()
+        pending.resume(returning: PortResult(
+            port: port, isOpen: open, service: service,
+            milliseconds: Date().timeIntervalSince(started) * 1000))
     }
 }

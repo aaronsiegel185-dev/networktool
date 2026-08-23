@@ -135,7 +135,7 @@ struct ProportionBar: View {
 struct FollowStreamView: View {
     let streamKey: String
     @EnvironmentObject private var store: AppStore
-    @State private var stream: Stream?
+    @State private var stream: PacketStream?
     @State private var showHex = false
 
     var body: some View {
