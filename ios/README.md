@@ -93,11 +93,21 @@ only a way to distribute afterwards.
 
 ## Tests
 
-These run without a device or a simulator:
+Fastest, and needs no simulator:
 
 ```bash
 cd ios/NettoolKit && swift test
 ```
+
+Or Cmd-U in Xcode - the `Nettool` scheme runs the same sources through the
+`NettoolKitTests` target.
+
+## A note on generated files
+
+`project.yml` is the source of truth. The `.xcodeproj`, both `Info.plist` files
+and the entitlements file are produced from it by `xcodegen generate` and are
+not committed - editing them by hand works until the next regeneration silently
+throws the edit away. Change `project.yml` and regenerate.
 
 ## Pairing with a Mac
 

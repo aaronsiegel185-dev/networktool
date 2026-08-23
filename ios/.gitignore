@@ -1,0 +1,11 @@
+# project.yml is the source of truth; these are all produced from it by
+# `xcodegen generate` and committing them only creates two versions to disagree.
+Nettool.xcodeproj/
+Nettool/Info.plist
+Nettool/Info-Entitled.plist
+Nettool/Nettool.entitlements
+
+# Xcode and SwiftPM working files
+.build/
+DerivedData/
+*.xcuserdatad
