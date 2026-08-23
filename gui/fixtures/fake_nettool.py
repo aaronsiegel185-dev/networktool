@@ -43,6 +43,10 @@ def main(argv):
     if command == "lldp":
         return emit("lldp.json")
     if command == "pcap":
+        # A monitor-mode capture gets the wireless survey, as the real tool does.
+        target = rest[0] if rest else ""
+        if "air" in target or "monitor" in target:
+            return emit("wireless_survey.json")
         return emit("pcap.json")
     if command == "analyze":
         if "--follow" in rest:

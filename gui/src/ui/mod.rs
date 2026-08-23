@@ -4,6 +4,7 @@ pub mod analyze;
 pub mod capture;
 pub mod discover;
 pub mod mirror;
+pub mod netmap;
 pub mod lldp;
 pub mod overview;
 pub mod scan;

@@ -602,6 +602,71 @@ pub struct StreamDump {
     pub stream: String,
 }
 
+// --- wireless survey (from a monitor-mode capture) --------------------------
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct SurveyAccessPoint {
+    #[serde(default)]
+    pub bssid: String,
+    #[serde(default)]
+    pub ssid: String,
+    #[serde(default)]
+    pub channel: Option<i64>,
+    #[serde(default)]
+    pub band: String,
+    #[serde(default)]
+    pub signal_dbm: Option<f64>,
+    #[serde(default)]
+    pub beacons: u64,
+    #[serde(default)]
+    pub security: Vec<String>,
+    #[serde(default)]
+    pub standards: Vec<String>,
+    #[serde(default)]
+    pub vendor: String,
+    #[serde(default)]
+    pub stations: Option<i64>,
+    #[serde(default)]
+    pub utilization_pct: Option<f64>,
+    #[serde(default)]
+    pub hidden: bool,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct SurveyClient {
+    #[serde(default)]
+    pub mac: String,
+    #[serde(default)]
+    pub vendor: String,
+    #[serde(default)]
+    pub frames: u64,
+    #[serde(default)]
+    pub bssids: Vec<String>,
+    #[serde(default)]
+    pub probes: Vec<String>,
+    #[serde(default)]
+    pub signal_dbm: Option<f64>,
+    #[serde(default)]
+    pub retry_pct: f64,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct WirelessSurvey {
+    #[serde(default)]
+    pub frames: u64,
+    #[serde(default)]
+    pub duration: f64,
+    #[serde(default)]
+    pub retry_pct: f64,
+    #[serde(default)]
+    pub access_points: Vec<SurveyAccessPoint>,
+    #[serde(default)]
+    pub clients: Vec<SurveyClient>,
+    /// `[severity, message]` pairs.
+    #[serde(default)]
+    pub findings: Vec<(String, String)>,
+}
+
 // --- mirror ----------------------------------------------------------------
 
 #[derive(Debug, Default, Clone, Deserialize)]

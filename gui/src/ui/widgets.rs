@@ -154,6 +154,140 @@ pub fn signal_bar(ui: &mut egui::Ui, dbm: Option<f64>, width: f32) {
     }
 }
 
+/// Plain-language verdict for an RSSI, matching nettool's own thresholds.
+pub fn signal_rating(dbm: f64) -> &'static str {
+    if dbm >= -50.0 {
+        "excellent"
+    } else if dbm >= -60.0 {
+        "good"
+    } else if dbm >= -67.0 {
+        "ok"
+    } else if dbm >= -72.0 {
+        "marginal"
+    } else if dbm >= -80.0 {
+        "poor"
+    } else {
+        "unusable"
+    }
+}
+
+/// What the number means, in one line - the answer to "is this good or bad?".
+pub fn signal_advice(dbm: f64) -> &'static str {
+    if dbm >= -60.0 {
+        "Strong. Anything will work here."
+    } else if dbm >= -67.0 {
+        "Fine for browsing; -67 dBm is the floor for calls and video."
+    } else if dbm >= -72.0 {
+        "Marginal. Expect slow speeds and stutter on calls."
+    } else if dbm >= -80.0 {
+        "Poor. Move closer to the access point or add one."
+    } else {
+        "Unusable. The radio can barely hear the access point."
+    }
+}
+
+/// A half-circle signal meter: coloured bands, a needle, and the verdict in words.
+pub fn signal_gauge(ui: &mut egui::Ui, dbm: Option<f64>, snr: Option<f64>, size: f32) {
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(size, size * 0.72), egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    let centre = egui::pos2(rect.center().x, rect.bottom() - size * 0.14);
+    let radius = size * 0.40;
+    let thickness = size * 0.075;
+
+    // The scale runs from unusable to excellent, left to right.
+    let low = -95.0_f64;
+    let high = -30.0_f64;
+    let fraction_of = |value: f64| ((value - low) / (high - low)).clamp(0.0, 1.0) as f32;
+    let point_at = |fraction: f32, r: f32| {
+        let angle = std::f32::consts::PI * (1.0 + fraction);
+        egui::pos2(centre.x + r * angle.cos(), centre.y + r * angle.sin())
+    };
+
+    let steps = 72;
+    for step in 0..steps {
+        let a = step as f32 / steps as f32;
+        let b = (step + 1) as f32 / steps as f32;
+        let value = low + (high - low) * (a as f64);
+        let band = signal_color(value);
+        let lit = dbm.map(|d| fraction_of(d) >= a).unwrap_or(false);
+        let color = if lit {
+            band
+        } else {
+            band.gamma_multiply(0.22)
+        };
+        painter.line_segment(
+            [point_at(a, radius), point_at(b, radius)],
+            egui::Stroke::new(thickness, color),
+        );
+    }
+
+    // Tick marks at the thresholds people actually quote.
+    for (value, label) in [(-80.0, "-80"), (-67.0, "-67"), (-50.0, "-50")] {
+        let fraction = fraction_of(value);
+        let inner = point_at(fraction, radius - thickness * 0.7);
+        let outer = point_at(fraction, radius + thickness * 0.7);
+        painter.line_segment([inner, outer], egui::Stroke::new(1.0, egui::Color32::from_gray(90)));
+        painter.text(
+            point_at(fraction, radius + thickness * 1.6),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::monospace(9.0),
+            egui::Color32::from_gray(120),
+        );
+    }
+
+    match dbm {
+        Some(value) => {
+            let fraction = fraction_of(value);
+            let colour = signal_color(value);
+            painter.line_segment(
+                [centre, point_at(fraction, radius - thickness * 0.6)],
+                egui::Stroke::new(2.5, colour),
+            );
+            painter.circle_filled(centre, 5.0, colour);
+            let readout = egui::Rect::from_center_size(
+                centre - egui::vec2(0.0, radius * 0.44),
+                egui::vec2(size * 0.62, size * 0.30),
+            );
+            painter.rect_filled(readout, 6.0, egui::Color32::from_black_alpha(170));
+            painter.text(
+                centre - egui::vec2(0.0, radius * 0.55),
+                egui::Align2::CENTER_CENTER,
+                format!("{value:.0} dBm"),
+                egui::FontId::proportional(size * 0.16),
+                colour,
+            );
+            painter.text(
+                centre - egui::vec2(0.0, radius * 0.24),
+                egui::Align2::CENTER_CENTER,
+                signal_rating(value),
+                egui::FontId::proportional(size * 0.085),
+                colour,
+            );
+            if let Some(snr) = snr {
+                painter.text(
+                    centre + egui::vec2(0.0, size * 0.10),
+                    egui::Align2::CENTER_CENTER,
+                    format!("SNR {snr:.0} dB"),
+                    egui::FontId::monospace(size * 0.062),
+                    if snr < 15.0 { CRIT } else if snr < 25.0 { WARN } else { MUTED },
+                );
+            }
+            response.on_hover_text(signal_advice(value));
+        }
+        None => {
+            painter.text(
+                centre - egui::vec2(0.0, radius * 0.4),
+                egui::Align2::CENTER_CENTER,
+                "not associated",
+                egui::FontId::proportional(size * 0.09),
+                MUTED,
+            );
+        }
+    }
+}
+
 /// A vertical bar chart: used for per-channel congestion scores.
 pub struct BarChartItem {
     pub label: String,

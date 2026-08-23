@@ -2,12 +2,68 @@
   "method": "arp",
   "hosts": [
     {
-      "ip": "192.0.2.1",
-      "mac": "02:fc:00:00:00:05",
-      "vendor": "(locally administered / randomized)",
+      "ip": "192.168.1.1",
+      "mac": "3c:22:fb:11:22:33",
+      "vendor": "Cisco",
+      "name": "router.lan",
       "method": "arp",
-      "iface": "eth0",
-      "name": ""
+      "rtt_ms": null
+    },
+    {
+      "ip": "192.168.1.14",
+      "mac": "b8:27:eb:aa:bb:cc",
+      "vendor": "Raspberry Pi",
+      "name": "pi-hole.lan",
+      "method": "arp",
+      "rtt_ms": null
+    },
+    {
+      "ip": "192.168.1.22",
+      "mac": "00:1b:21:aa:00:05",
+      "vendor": "Intel",
+      "name": "desktop.lan",
+      "method": "arp",
+      "rtt_ms": null
+    },
+    {
+      "ip": "192.168.1.37",
+      "mac": "18:b4:30:00:11:22",
+      "vendor": "Nest",
+      "name": "thermostat",
+      "method": "arp",
+      "rtt_ms": null
+    },
+    {
+      "ip": "192.168.1.44",
+      "mac": "ac:63:be:00:44:55",
+      "vendor": "Amazon",
+      "name": "echo-kitchen",
+      "method": "arp",
+      "rtt_ms": null
+    },
+    {
+      "ip": "192.168.1.52",
+      "mac": "00:17:88:00:52:11",
+      "vendor": "Philips Hue",
+      "name": "hue-bridge",
+      "method": "arp",
+      "rtt_ms": null
+    },
+    {
+      "ip": "192.168.1.77",
+      "mac": "9c:53:22:00:77:aa",
+      "vendor": "TP-Link",
+      "name": "",
+      "method": "arp",
+      "rtt_ms": null
+    },
+    {
+      "ip": "192.168.1.90",
+      "mac": "00:0e:58:00:90:12",
+      "vendor": "Sonos",
+      "name": "sonos-living",
+      "method": "arp",
+      "rtt_ms": null
     }
   ],
   "duplicate_ips": {}

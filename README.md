@@ -22,7 +22,7 @@ There is also a **desktop GUI** in [`gui/`](gui/README.md) (Rust + egui) that dr
 same CLI and renders the results - signal bars, channel congestion charts, live packet
 view and switch-neighbour cards.
 
-![nettool GUI](gui/docs/wifi-analyze.png)
+![nettool GUI](gui/docs/wifi-map.png)
 
 ## Install
 
@@ -403,7 +403,7 @@ The bundle carries the CLI inside `Contents/Resources`, so the app is self-conta
 
 ```bash
 python3 -m unittest discover -s tests -v     # CLI: 187 tests
-cd gui && cargo test                         # GUI: 37 tests
+cd gui && cargo test                         # GUI: 47 tests
 ```
 
 The suite covers the packet decoder, pcap reader/writer round-trips, the filter language,

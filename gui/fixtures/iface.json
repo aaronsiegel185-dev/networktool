@@ -1,10 +1,10 @@
 {
   "interfaces": [
     {
-      "name": "eth0",
+      "name": "en0",
       "index": 4,
       "mac": "02:fc:00:00:00:01",
-      "ipv4": "192.0.2.2",
+      "ipv4": "192.168.1.42",
       "netmask": "255.255.255.0",
       "prefixlen": 24,
       "broadcast": "192.0.2.255",
@@ -14,7 +14,7 @@
       "carrier": "1",
       "speed_mbps": -1,
       "duplex": "unknown",
-      "wireless": false,
+      "wireless": true,
       "up": true,
       "running": true,
       "loopback": false,
@@ -81,10 +81,10 @@
       "metric": 0
     }
   ],
-  "default_gateway": "192.0.2.1",
-  "gateway_interface": "eth0",
+  "default_gateway": "192.168.1.1",
+  "gateway_interface": "en0",
   "dns_servers": [
-    "8.8.8.8"
+    "192.168.1.1"
   ],
   "dns_search": [],
   "arp": [

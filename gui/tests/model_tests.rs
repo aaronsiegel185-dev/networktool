@@ -13,16 +13,17 @@ fn load<T: serde::de::DeserializeOwned>(name: &str) -> T {
 fn parses_interface_inventory() {
     let report: IfaceReport = load("iface.json");
     assert!(!report.interfaces.is_empty());
-    let eth = report
+    // Whatever the primary interface is called on the machine that recorded the
+    // fixture, it must parse with an address, a prefix and live counters.
+    let primary = report
         .interfaces
         .iter()
-        .find(|i| i.name == "eth0")
-        .expect("eth0 in fixture");
-    assert!(eth.up);
-    assert!(!eth.wireless);
-    assert_eq!(eth.prefixlen, 24);
-    assert_eq!(eth.cidr(), format!("{}/24", eth.ipv4));
-    assert!(eth.counters.rx_bytes > 0);
+        .find(|i| !i.loopback && !i.ipv4.is_empty())
+        .expect("an addressed interface in the fixture");
+    assert!(primary.up);
+    assert_eq!(primary.prefixlen, 24);
+    assert_eq!(primary.cidr(), format!("{}/24", primary.ipv4));
+    assert!(primary.counters.rx_bytes > 0);
     assert!(report.default_gateway.is_some());
     assert!(!report.dns_servers.is_empty());
     assert!(report.routes.iter().any(|r| r.prefixlen == 0));

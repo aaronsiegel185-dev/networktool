@@ -80,6 +80,7 @@ fn parse_options() -> Result<Options, String> {
             "--wifi-view" => {
                 let value = argv.next().ok_or("--wifi-view needs a value")?;
                 options.wifi_view = Some(match value.to_ascii_lowercase().as_str() {
+                    "map" => WifiView::Map,
                     "analyze" | "analyse" => WifiView::Analyze,
                     "networks" | "scan" => WifiView::Scan,
                     "link" => WifiView::Link,

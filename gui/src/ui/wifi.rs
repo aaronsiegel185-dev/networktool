@@ -6,13 +6,16 @@ use std::time::Duration;
 
 use super::widgets::{self, header_row, kv, BarChartItem};
 use super::{interface_picker, job_footer, root_hint, run_controls, stop_button, Action};
+use super::netmap;
 use crate::model::{
-    Bss, IfaceReport, SurveyEntry, WifiAnalyzeReport, WifiLink, WifiScanReport,
+    Bss, DiscoverReport, IfaceReport, SurveyEntry, WifiAnalyzeReport, WifiLink,
+    WifiScanReport, WirelessSurvey,
 };
 use crate::runner::{args, Job, JobMode, Settings};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
+    Map,
     Scan,
     Link,
     Analyze,
@@ -51,6 +54,14 @@ pub struct WifiTab {
     seen_bssids: Vec<String>,
     last_sample: Option<WifiLink>,
     monitor_lines_seen: usize,
+
+    hosts_job: Option<Job>,
+    hosts_report: Option<DiscoverReport>,
+    hosts_error: Option<String>,
+    survey_path: String,
+    survey_job: Option<Job>,
+    survey_report: Option<WirelessSurvey>,
+    survey_error: Option<String>,
 }
 
 impl Default for WifiTab {
@@ -76,6 +87,13 @@ impl Default for WifiTab {
             seen_bssids: Vec::new(),
             last_sample: None,
             monitor_lines_seen: 0,
+            hosts_job: None,
+            hosts_report: None,
+            hosts_error: None,
+            survey_path: String::new(),
+            survey_job: None,
+            survey_report: None,
+            survey_error: None,
         }
     }
 }
@@ -97,6 +115,7 @@ impl WifiTab {
     /// Start whichever job the visible sub-view shows (used by `--autorun`).
     pub fn autorun(&mut self, settings: &Settings) {
         match self.view {
+            View::Map => self.refresh_map(settings),
             View::Scan => self.start_scan(settings),
             View::Link => self.start_link(settings),
             View::Analyze => self.start_analyze(settings),
@@ -127,6 +146,33 @@ impl WifiTab {
         self.analyze_job = Some(Job::spawn(settings, "wifi analyze", argv));
     }
 
+    /// The map wants everything at once: our link, the neighbours, and the LAN.
+    fn refresh_map(&mut self, settings: &Settings) {
+        self.start_link(settings);
+        self.start_scan(settings);
+        self.hosts_error = None;
+        self.hosts_job = Some(Job::spawn(
+            settings,
+            "discover",
+            args(&["discover", "--json", "-t", "3"]),
+        ));
+    }
+
+    fn load_survey(&mut self, settings: &Settings) {
+        if self.survey_path.trim().is_empty() {
+            self.survey_error = Some("enter the path of a monitor-mode capture".into());
+            return;
+        }
+        let argv = vec![
+            "pcap".to_string(),
+            self.survey_path.trim().to_string(),
+            "--json".to_string(),
+        ];
+        self.survey_error = None;
+        self.survey_report = None;
+        self.survey_job = Some(Job::spawn(settings, "wireless survey", argv));
+    }
+
     fn start_monitor(&mut self, settings: &Settings) {
         self.history.clear();
         self.seen_bssids.clear();
@@ -150,6 +196,11 @@ impl WifiTab {
             &mut self.analyze_report,
             &mut self.analyze_error,
         );
+
+        changed |= poll_into(&mut self.hosts_job, &mut self.hosts_report,
+                             &mut self.hosts_error);
+        changed |= poll_into(&mut self.survey_job, &mut self.survey_report,
+                             &mut self.survey_error);
 
         if let Some(job) = self.monitor_job.as_mut() {
             let updated = job.poll();
@@ -208,6 +259,7 @@ impl WifiTab {
 
         ui.horizontal(|ui| {
             for (view, label) in [
+                (View::Map, "Map"),
                 (View::Analyze, "Analyze"),
                 (View::Scan, "Networks"),
                 (View::Link, "My link"),
@@ -232,12 +284,161 @@ impl WifiTab {
         ui.add_space(6.0);
 
         match self.view {
+            View::Map => self.map_view(ui, settings, inventory),
             View::Scan => self.scan_view(ui, settings),
             View::Link => self.link_view(ui, settings),
             View::Analyze => self.analyze_view(ui, settings),
             View::Monitor => self.monitor_view(ui, settings),
         }
         Action::None
+    }
+
+    fn map_view(
+        &mut self,
+        ui: &mut egui::Ui,
+        settings: &Settings,
+        inventory: &Option<IfaceReport>,
+    ) {
+        let mut refresh = false;
+        ui.horizontal_wrapped(|ui| {
+            widgets::heading(ui, "Your network");
+            let running = self.link_job.as_ref().map(|j| j.running()).unwrap_or(false)
+                || self.scan_job.as_ref().map(|j| j.running()).unwrap_or(false)
+                || self.hosts_job.as_ref().map(|j| j.running()).unwrap_or(false);
+            if running {
+                ui.spinner();
+                ui.label(
+                    egui::RichText::new("looking around...")
+                        .size(11.0)
+                        .color(widgets::MUTED),
+                );
+            } else if ui.button("Refresh").clicked() {
+                refresh = true;
+            }
+            ui.separator();
+            ui.label("clients from a monitor capture");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.survey_path)
+                    .desired_width(200.0)
+                    .hint_text("optional air.pcap"),
+            );
+            if ui.button("Load").clicked() {
+                self.load_survey(settings);
+            }
+        });
+        if refresh {
+            self.refresh_map(settings);
+        }
+
+        let link = self.link_report.clone().unwrap_or_default();
+        ui.add_space(4.0);
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                widgets::signal_gauge(ui, link.signal_dbm, link.snr_db, 190.0);
+                if let Some(signal) = link.signal_dbm {
+                    ui.add_space(2.0);
+                    ui.label(
+                        egui::RichText::new(widgets::signal_advice(signal))
+                            .size(11.0)
+                            .color(widgets::signal_color(signal)),
+                    );
+                }
+            });
+            ui.add_space(10.0);
+            ui.vertical(|ui| {
+                if link.connected || link.signal_dbm.is_some() {
+                    ui.label(
+                        egui::RichText::new(if link.ssid.is_empty() {
+                            "(hidden SSID)"
+                        } else {
+                            &link.ssid
+                        })
+                        .strong()
+                        .size(18.0),
+                    );
+                    egui::Grid::new("map_link")
+                        .num_columns(2)
+                        .spacing([14.0, 2.0])
+                        .show(ui, |ui| {
+                            kv(ui, "access point", &link.bssid);
+                            kv(
+                                ui,
+                                "band / channel",
+                                format!(
+                                    "{} GHz / {}",
+                                    link.band,
+                                    widgets::fmt_opt(link.channel)
+                                ),
+                            );
+                            kv(ui, "tx rate", &link.tx_bitrate);
+                            if let Some(station) = &link.station {
+                                kv(
+                                    ui,
+                                    "tx retries",
+                                    format!("{:.1}%", station.retry_pct.unwrap_or(0.0)),
+                                );
+                            }
+                        });
+                } else {
+                    ui.label(
+                        egui::RichText::new("Not associated with a network")
+                            .color(widgets::WARN),
+                    );
+                }
+                if let Some(hosts) = &self.hosts_report {
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} device(s) found on the LAN",
+                            hosts.hosts.len()
+                        ))
+                        .size(12.0),
+                    );
+                }
+                if let Some(survey) = &self.survey_report {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} AP(s) and {} station(s) from the capture",
+                            survey.access_points.len(),
+                            survey.clients.len()
+                        ))
+                        .size(12.0),
+                    );
+                }
+            });
+        });
+
+        ui.add_space(8.0);
+        let map = netmap::build(&netmap::MapInputs {
+            link: self.link_report.as_ref(),
+            scan: self.scan_report.as_ref(),
+            hosts: self.hosts_report.as_ref(),
+            inventory: inventory.as_ref(),
+            survey: self.survey_report.as_ref(),
+            max_other_aps: 5,
+            max_hosts: 8,
+        });
+        let hovered = netmap::draw(ui, &map, 380.0);
+        if let Some(id) = hovered {
+            if let Some(node) = map.node(&id) {
+                ui.label(
+                    egui::RichText::new(format!("{} - {}", node.label, node.detail))
+                        .size(11.0)
+                        .color(widgets::MUTED),
+                );
+            }
+        } else {
+            ui.label(
+                egui::RichText::new(
+                    "M this Mac   A access point   G gateway   c wireless client   \
+                     h device on the LAN   -- dashed: exact attachment unknown",
+                )
+                .size(11.0)
+                .color(widgets::MUTED),
+            );
+        }
+        job_footer(ui, &self.hosts_job, &self.hosts_error);
+        job_footer(ui, &self.survey_job, &self.survey_error);
     }
 
     fn scan_view(&mut self, ui: &mut egui::Ui, settings: &Settings) {

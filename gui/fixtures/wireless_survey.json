@@ -1,0 +1,138 @@
+{
+  "frames": 124,
+  "duration": 5.8,
+  "retry_pct": 12.1,
+  "bad_fcs": 0,
+  "frame_types": {
+    "data/qos-data": 60,
+    "management/beacon": 50,
+    "management/deauthentication": 9,
+    "management/probe-request": 5
+  },
+  "channels": {
+    "1": {
+      "frames": 12,
+      "bssids": 1
+    },
+    "6": {
+      "frames": 104,
+      "bssids": 2
+    },
+    "36": {
+      "frames": 8,
+      "bssids": 1
+    }
+  },
+  "access_points": [
+    {
+      "bssid": "3c:22:fb:11:22:33",
+      "ssid": "HomeNet",
+      "beacons": 30,
+      "channel": 6,
+      "band": "2.4",
+      "security": [
+        "WPA2/WPA3"
+      ],
+      "standards": [
+        "n"
+      ],
+      "vendor": "",
+      "stations": 7,
+      "utilization_pct": 50.2,
+      "beacon_interval": 100,
+      "hidden": false,
+      "first_seen": 1700000000.0,
+      "last_seen": 1700000002.9,
+      "country": "",
+      "signal_dbm": -47.0,
+      "signal_max": -47,
+      "signal_min": -47
+    },
+    {
+      "bssid": "60:22:32:aa:bb:cc",
+      "ssid": "NeighborNet",
+      "beacons": 12,
+      "channel": 1,
+      "band": "2.4",
+      "security": [
+        "WPA2/WPA3"
+      ],
+      "standards": [
+        "n"
+      ],
+      "vendor": "",
+      "stations": 7,
+      "utilization_pct": 50.2,
+      "beacon_interval": 100,
+      "hidden": false,
+      "first_seen": 1700000000.0,
+      "last_seen": 1700000002.75,
+      "country": "",
+      "signal_dbm": -71.0,
+      "signal_max": -71,
+      "signal_min": -71
+    },
+    {
+      "bssid": "04:18:d6:de:ad:01",
+      "ssid": "Guest-5G",
+      "beacons": 8,
+      "channel": 36,
+      "band": "5",
+      "security": [
+        "WPA2/WPA3"
+      ],
+      "standards": [
+        "n"
+      ],
+      "vendor": "Ubiquiti",
+      "stations": 7,
+      "utilization_pct": 50.2,
+      "beacon_interval": 100,
+      "hidden": false,
+      "first_seen": 1700000000.0,
+      "last_seen": 1700000002.1,
+      "country": "",
+      "signal_dbm": -80.0,
+      "signal_max": -80,
+      "signal_min": -80
+    }
+  ],
+  "clients": [
+    {
+      "mac": "b8:27:eb:aa:bb:cc",
+      "vendor": "Raspberry Pi",
+      "frames": 65,
+      "bssids": [
+        "3c:22:fb:11:22:33",
+        "ff:ff:ff:ff:ff:ff"
+      ],
+      "probes": [
+        "CorpWiFi"
+      ],
+      "retries": 15,
+      "signal_dbm": -54.4,
+      "retry_pct": 23.1
+    }
+  ],
+  "deauths": [
+    {
+      "src": "3c:22:fb:11:22:33",
+      "dst": "b8:27:eb:aa:bb:cc",
+      "reason": "4-way handshake timeout",
+      "reason_code": 15,
+      "count": 9,
+      "subtype": "deauthentication"
+    }
+  ],
+  "findings": [
+    [
+      "warn",
+      "12% of frames are retransmissions."
+    ],
+    [
+      "warn",
+      "9 deauth/disassoc frames seen; the most common is \"4-way handshake timeout\" (9 times, 3c:22:fb:11:22:33 -> b8:27:eb:aa:bb:cc)."
+    ]
+  ],
+  "file": "/tmp/claude-0/-home-user-alfresco/1013fb50-aa40-5007-9b7a-8e7f441fc130/scratchpad/air.pcap"
+}

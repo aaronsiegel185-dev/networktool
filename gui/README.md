@@ -51,7 +51,7 @@ nettool-gui [options]
   --tab <name>                  open on overview | discover | scan | lldp | capture | mirror | analyze | wifi
   --open <file.pcap>            open a capture straight into the analysis tab
   --analyze-view <name>         conversations | endpoints | protocols | tcp | dns | throughput
-  --wifi-view <name>            wifi sub-view: analyze | networks | link | monitor
+  --wifi-view <name>            wifi sub-view: map | analyze | networks | link | monitor
   --nettool <cmd>               how to run nettool, e.g. "python3 -m nettool"
   --sudo                        run nettool through `sudo -n`
   --autorun                     run the opening tab's action immediately
@@ -87,7 +87,16 @@ at all. Signal, SNR, channel load and the channel recommendation work regardless
 | **Capture** | Live packet view streaming from the running capture, writing a standard pcap, with the filter language and a Stop button. Below it, summarise any pcap file: protocol mix, top talkers, conversations. |
 | **Mirror / VLAN** | Capture from a switch SPAN port: per-VLAN inventory (hosts, MACs, broadcast share, protocols, DHCP servers), mirror health checks, one pcap per VLAN, and the switch commands that set the mirror up, with a copy button. |
 | **Analyse** | Conversations at every layer with per-direction byte counts, endpoints, protocol hierarchy with share bars, TCP health (retransmissions, resets, zero windows, handshake times), DNS timing, a throughput chart, and Follow-Stream. |
-| **Wi-Fi** | Four views — *Analyze* (per-channel congestion bar charts, recommended channel, airtime survey, findings), *Networks* (scan table with signal bars), *My link* (RSSI, SNR, bitrate, retries), *Monitor* (live signal chart with swing and roaming detection). |
+| **Wi-Fi** | Five views — *Map* (a picture of your network: a signal gauge that says good or bad in words, and the path from the internet through your gateway and access point to this machine, with neighbouring APs and everything else found on the LAN), *Analyze* (per-channel congestion bar charts, recommended channel, airtime survey, findings), *Networks* (scan table with signal bars), *My link* (RSSI, SNR, bitrate, retries), *Monitor* (live signal chart with swing and roaming detection). |
+
+![The network map](docs/wifi-map.png)
+
+The map colours everything by signal: the gauge and the link to your access point turn
+amber below -67 dBm (the floor for calls and video) and red below -72 dBm, so "is my
+signal good?" is answered at a glance. Nearby access points are dimmed, devices found on
+the LAN hang off the gateway, and if you point it at a monitor-mode capture
+(`nettool capture -M -w air.pcap`) it also draws the client stations it saw, attached to
+the access point each one was actually talking to.
 
 ![Wi-Fi analysis](docs/wifi-analyze.png)
 
@@ -114,7 +123,7 @@ at all. Signal, SNR, channel load and the channel recommendation work regardless
 ## Tests
 
 ```bash
-cargo test          # 37 tests, no window required
+cargo test          # 47 tests, no window required
 cargo clippy --all-targets
 ```
 
