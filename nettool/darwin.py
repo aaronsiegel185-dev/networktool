@@ -416,6 +416,31 @@ def _security_label(raw):
     return lookup.get(text.lower(), [text])
 
 
+_MAC_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+
+
+def normalise_mac(value):
+    """A MAC address out of however macOS rendered it, or "" if it is not one.
+
+    SystemConfiguration keeps a BSSID as a CFData blob, and scutil prints that as
+    "<data> 0x0026bb1a2b3c". Passing the rendering straight through is how a
+    "0x0200..." ends up sitting where an address belongs, so decode the blob and
+    refuse anything that is not six bytes.
+    """
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    if text.startswith("<data>"):
+        digits = re.search(r"0x([0-9a-f]+)", text)
+        text = digits.group(1) if digits else ""
+    text = text.replace("-", ":")
+    if _MAC_RE.match(text):
+        return text
+    if re.match(r"^[0-9a-f]{12}$", text):
+        return ":".join(text[i:i + 2] for i in range(0, 12, 2))
+    return ""
+
+
 def is_redacted(*values):
     """True if macOS blanked a Wi-Fi name.
 
@@ -463,7 +488,7 @@ def parse_airport_json(payload):
         networks.append({
             "ssid": "" if redacted else name,
             # macOS does not expose neighbouring BSSIDs without extra entitlements.
-            "bssid": "" if redacted else bssid,
+            "bssid": "" if redacted else normalise_mac(bssid),
             "channel": channel,
             "band": band,
             "freq": None,
@@ -522,7 +547,7 @@ def parse_wdutil(text):
         "interface": info.get("interface name", ""),
         "connected": bool(ssid) and "not associated" not in ssid.lower(),
         "ssid": "" if redacted else ssid,
-        "bssid": "" if redacted else bssid.lower(),
+        "bssid": "" if redacted else normalise_mac(bssid),
         "channel": channel,
         "band": band,
         "width_mhz": width,
@@ -570,7 +595,7 @@ def parse_airport_current(payload):
         "interface": iface,
         "connected": True,
         "ssid": "" if redacted else ssid,
-        "bssid": "" if redacted else bssid,
+        "bssid": "" if redacted else normalise_mac(bssid),
         "channel": channel,
         "band": band,
         "width_mhz": width,
@@ -653,9 +678,28 @@ def parse_networksetup_ssid(text):
     return ""
 
 
+def _scutil_text(value):
+    """A string out of scutil, decoding the "<data> 0x..." form it also uses."""
+    text = str(value or "").strip()
+    if not text.startswith("<data>"):
+        return text
+    digits = re.search(r"0x([0-9a-fA-F]+)", text)
+    if not digits or len(digits.group(1)) % 2:
+        return ""
+    try:
+        return bytes.fromhex(digits.group(1)).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return ""
+
+
 def parse_scutil_airport(text):
-    """SSID_STR and BSSID out of a `scutil` AirPort dictionary."""
+    """SSID and BSSID out of a `scutil` AirPort dictionary.
+
+    Both arrive either as plain strings or as CFData blobs depending on the macOS
+    version, so neither can be trusted to be printable as it stands.
+    """
     info = {"ssid": "", "bssid": ""}
+    data_ssid = ""
     for raw in text.splitlines():
         line = raw.strip()
         if ":" not in line:
@@ -663,10 +707,16 @@ def parse_scutil_airport(text):
         key, value = line.split(":", 1)
         key = key.strip().upper()
         value = value.strip()
-        if key == "SSID_STR" and not is_redacted(value):
-            info["ssid"] = value
-        elif key == "BSSID" and not is_redacted(value):
-            info["bssid"] = value.lower()
+        if is_redacted(value):
+            continue
+        if key == "SSID_STR":
+            info["ssid"] = _scutil_text(value)
+        elif key == "SSID":
+            data_ssid = _scutil_text(value)
+        elif key == "BSSID":
+            info["bssid"] = normalise_mac(value)
+    if not info["ssid"]:
+        info["ssid"] = data_ssid
     return info
 
 

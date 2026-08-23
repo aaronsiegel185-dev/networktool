@@ -980,13 +980,32 @@ pub struct WifiLink {
     pub bssid_vendor: String,
 }
 
+/// Six colon-separated hex bytes, and nothing else.
+pub fn looks_like_mac(value: &str) -> bool {
+    let mut bytes = 0;
+    for part in value.split(':') {
+        if part.len() != 2 || !part.chars().all(|c| c.is_ascii_hexdigit()) {
+            return false;
+        }
+        bytes += 1;
+    }
+    bytes == 6
+}
+
 impl WifiLink {
     /// The access point's MAC, or why we do not have it.
+    ///
+    /// Anything that is not an address is treated as absent: macOS renders a
+    /// BSSID as a CFData blob in places, and "0x0200..." on screen where an
+    /// address belongs is worse than admitting we do not have one.
     pub fn display_bssid(&self) -> &str {
-        match (self.bssid.is_empty(), self.redacted) {
-            (false, _) => &self.bssid,
-            (true, true) => "(hidden by macOS)",
-            (true, false) => "unknown",
+        if looks_like_mac(&self.bssid) {
+            return &self.bssid;
+        }
+        if self.redacted {
+            "(hidden by macOS)"
+        } else {
+            "unknown"
         }
     }
 

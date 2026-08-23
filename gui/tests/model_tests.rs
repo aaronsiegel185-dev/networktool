@@ -427,3 +427,21 @@ fn names_the_access_point_or_says_why_not() {
     let none: WifiLink = serde_json::from_str(r#"{"bssid":""}"#).unwrap();
     assert_eq!(none.display_bssid(), "unknown");
 }
+
+#[test]
+fn refuses_to_show_a_data_blob_as_an_address() {
+    // What macOS actually handed over before the parser learned to decode it.
+    let blob: WifiLink =
+        serde_json::from_str(r#"{"bssid":"0x0200000","connected":true}"#).unwrap();
+    assert_eq!(blob.display_bssid(), "unknown");
+
+    let data_form: WifiLink =
+        serde_json::from_str(r#"{"bssid":"<data> 0x3c22fb112233","redacted":true}"#).unwrap();
+    assert_eq!(data_form.display_bssid(), "(hidden by macOS)");
+
+    assert!(nettool_gui::model::looks_like_mac("3c:22:fb:11:22:33"));
+    assert!(!nettool_gui::model::looks_like_mac("3c:22:fb:11:22"));
+    assert!(!nettool_gui::model::looks_like_mac("3c:22:fb:11:22:33:44"));
+    assert!(!nettool_gui::model::looks_like_mac("zz:22:fb:11:22:33"));
+    assert!(!nettool_gui::model::looks_like_mac(""));
+}

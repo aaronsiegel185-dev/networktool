@@ -335,6 +335,34 @@ class TestWifiParsing(unittest.TestCase):
         self.assertEqual(found["ssid"], "HomeNet")
         self.assertEqual(found["bssid"], "3c:22:fb:11:22:33")
 
+    def test_scutil_data_blobs_are_decoded_not_echoed(self):
+        # SystemConfiguration hands both fields back as CFData on some versions,
+        # and printing scutil's rendering is how "0x0200..." reaches the screen.
+        text = """<dictionary> {
+  BSSID : <data> 0x3c22fb112233
+  SSID : <data> 0x486f6d654e6574
+}
+"""
+        found = darwin.parse_scutil_airport(text)
+        self.assertEqual(found["bssid"], "3c:22:fb:11:22:33")
+        self.assertEqual(found["ssid"], "HomeNet")
+
+    def test_a_blob_that_is_not_an_address_is_dropped(self):
+        found = darwin.parse_scutil_airport("  BSSID : <data> 0x0200000\n")
+        self.assertEqual(found["bssid"], "")
+
+    def test_normalise_mac_accepts_what_macos_actually_prints(self):
+        for given, want in [
+            ("3C:22:FB:11:22:33", "3c:22:fb:11:22:33"),
+            ("3c-22-fb-11-22-33", "3c:22:fb:11:22:33"),
+            ("3c22fb112233", "3c:22:fb:11:22:33"),
+            ("<data> 0x3c22fb112233", "3c:22:fb:11:22:33"),
+        ]:
+            self.assertEqual(darwin.normalise_mac(given), want, given)
+        for junk in ["", None, "0x0200000", "<data> 0x0200000", "not a mac",
+                     "3c:22:fb:11:22", "3c:22:fb:11:22:33:44"]:
+            self.assertEqual(darwin.normalise_mac(junk), "", repr(junk))
+
     def test_blanked_name_is_recovered_without_location_permission(self):
         link = {"interface": "en0", "ssid": "", "bssid": "", "redacted": True}
         calls = []

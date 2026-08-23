@@ -542,6 +542,13 @@ def _name_the_ap(state):
     site with mixed hardware that is usually the question being asked.
     """
     bssid = state.get("bssid") or ""
+    if IS_DARWIN:
+        from . import darwin
+
+        # Never let a CFData rendering reach a vendor lookup: oui.lookup strips
+        # the punctuation and would happily name a vendor for "0x020000...".
+        bssid = darwin.normalise_mac(bssid)
+        state["bssid"] = bssid
     state["bssid_vendor"] = oui.lookup(bssid) if bssid else ""
     return state
 
