@@ -2,16 +2,17 @@
 //! interference analysis with a recommended channel.
 
 use eframe::egui;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::widgets::{self, header_row, kv, BarChartItem};
 use super::{
     hidden_names_hint, interface_picker, job_footer, root_hint, run_controls, stop_button, Action,
 };
 use super::netmap;
+use crate::maclocation;
 use crate::model::{
-    Bss, DiscoverReport, IfaceReport, LocationPermission, SurveyEntry, WifiAnalyzeReport, WifiLink,
-    WifiScanReport, WirelessSurvey,
+    Bss, DiscoverReport, IfaceReport, SurveyEntry, WifiAnalyzeReport, WifiLink, WifiScanReport,
+    WirelessSurvey,
 };
 use crate::runner::{args, Job, JobMode, Settings};
 
@@ -65,8 +66,8 @@ pub struct WifiTab {
     survey_report: Option<WirelessSurvey>,
     survey_error: Option<String>,
 
-    permission_job: Option<Job>,
-    permission_report: Option<LocationPermission>,
+    permission_status: Option<i32>,
+    permission_deadline: Option<Instant>,
     permission_error: Option<String>,
 }
 
@@ -96,8 +97,8 @@ impl Default for WifiTab {
             hosts_job: None,
             hosts_report: None,
             hosts_error: None,
-            permission_job: None,
-            permission_report: None,
+            permission_status: None,
+            permission_deadline: None,
             permission_error: None,
             survey_path: String::new(),
             survey_job: None,
@@ -210,8 +211,7 @@ impl WifiTab {
                              &mut self.hosts_error);
         changed |= poll_into(&mut self.survey_job, &mut self.survey_report,
                              &mut self.survey_error);
-        changed |= poll_into(&mut self.permission_job, &mut self.permission_report,
-                             &mut self.permission_error);
+        changed |= self.poll_permission();
 
         if let Some(job) = self.monitor_job.as_mut() {
             let updated = job.poll();
@@ -301,7 +301,7 @@ impl WifiTab {
         }
         if self.names_hidden() {
             hidden_names_hint(ui);
-            self.permission_row(ui, settings);
+            self.permission_row(ui);
         }
         ui.add_space(6.0);
 
@@ -664,16 +664,79 @@ impl WifiTab {
         job_footer(ui, &self.link_job, &self.link_error);
     }
 
+    /// True while we are still waiting for an answer to the system prompt.
+    fn permission_pending(&self) -> bool {
+        self.permission_deadline.is_some()
+    }
+
+    /// Watch for the user answering the prompt.
+    ///
+    /// Taking a callback would mean defining an Objective-C delegate class at
+    /// runtime, so instead read the status back each frame until it moves off
+    /// "not determined".
+    fn poll_permission(&mut self) -> bool {
+        let Some(deadline) = self.permission_deadline else {
+            return false;
+        };
+        if let Some(status) = maclocation::status() {
+            if status != maclocation::NOT_DETERMINED {
+                self.permission_status = Some(status);
+                self.permission_deadline = None;
+                return true;
+            }
+        }
+        if Instant::now() >= deadline {
+            self.permission_deadline = None;
+            self.permission_error =
+                Some("no answer to the location prompt - it never appeared".into());
+            return true;
+        }
+        false
+    }
+
+    /// Ask CoreLocation from inside this process.
+    ///
+    /// Not by running the CLI: macOS only prompts a process whose own bundle
+    /// declares NSLocationWhenInUseUsageDescription, and a spawned `python3` has
+    /// no bundle at all - such a request is discarded in silence, which is
+    /// exactly the "nothing happened" this replaces.
+    fn request_location(&mut self, ctx: &egui::Context) {
+        self.permission_error = None;
+        if !maclocation::can_prompt() {
+            self.permission_error = Some(
+                "this copy is not running from nettool.app, so macOS will not show a \
+                 location prompt - open /Applications/nettool.app instead"
+                    .into(),
+            );
+            return;
+        }
+        match maclocation::request() {
+            Some(status) if maclocation::granted(status) => {
+                self.permission_status = Some(status);
+            }
+            Some(status) => {
+                self.permission_status = Some(status);
+                // The answer lands on a later frame, once the prompt is dismissed.
+                self.permission_deadline = Some(Instant::now() + Duration::from_secs(60));
+                ctx.request_repaint_after(Duration::from_millis(250));
+            }
+            None => {
+                self.permission_error =
+                    Some("CoreLocation is unavailable on this system".into());
+            }
+        }
+    }
+
     /// The one control that can change the permission, and what came of pressing it.
     ///
-    /// macOS only lists an app under Location Services once the app has asked, so
-    /// there is nothing the user can go and tick until this button has run.
+    /// macOS lists an app under Location Services only once that app has asked,
+    /// so until this button has run there is nothing for the user to go and tick.
     /// Only reached when a result actually came back blanked, which only macOS
-    /// does - so this needs no platform check of its own.
-    fn permission_row(&mut self, ui: &mut egui::Ui, settings: &Settings) {
-        let running = self.permission_job.as_ref().map(|j| j.running()).unwrap_or(false);
+    /// does - so it needs no platform check of its own.
+    fn permission_row(&mut self, ui: &mut egui::Ui) {
+        let waiting = self.permission_pending();
         ui.horizontal_wrapped(|ui| {
-            if running {
+            if waiting {
                 ui.spinner();
                 ui.label(
                     egui::RichText::new("waiting for the macOS prompt...")
@@ -683,29 +746,27 @@ impl WifiTab {
             } else if ui
                 .button("Ask macOS for permission")
                 .on_hover_text(
-                    "Shows the system location prompt. macOS will only ask once - after                      that the answer is changed in System Settings.",
+                    "Shows the system location prompt. macOS asks only once - after that \
+                     the answer is changed in System Settings.",
                 )
                 .clicked()
             {
-                self.permission_error = None;
-                self.permission_report = None;
-                // Deliberately not through sudo: macOS records the grant against
-                // the user who was asked, so a prompt answered as root would
-                // leave the app itself exactly as blocked as before.
-                let as_me = Settings { use_sudo: false, ..settings.clone() };
-                self.permission_job = Some(Job::spawn(
-                    &as_me,
-                    "wifi permission",
-                    args(&["wifi", "permission", "--request", "--json"]),
-                ));
+                let ctx = ui.ctx().clone();
+                self.request_location(&ctx);
             }
-            if let Some(report) = self.permission_report.as_ref() {
-                if report.granted {
-                    ui.colored_label(widgets::OK, "granted - rescan to see the names");
-                } else {
+            if let Some(status) = self.permission_status {
+                if maclocation::granted(status) {
+                    ui.colored_label(widgets::OK, "granted - scan again to see the names");
+                } else if status == maclocation::DENIED {
                     ui.colored_label(
                         widgets::WARN,
-                        format!("still {} - grant it in System Settings", report.status_name),
+                        "denied earlier, so macOS will not ask again - turn nettool on in \
+                         System Settings > Privacy & Security > Location Services",
+                    );
+                } else if !waiting {
+                    ui.colored_label(
+                        widgets::WARN,
+                        format!("still {}", maclocation::status_name(status)),
                     );
                 }
             }

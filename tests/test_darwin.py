@@ -368,6 +368,30 @@ class TestWifiParsing(unittest.TestCase):
             darwin.run_cmd = saved
         self.assertTrue(out["redacted"])
 
+    def test_name_sources_reports_every_door_it_tried(self):
+        def fake_run(argv, timeout=30, stdin=None):
+            if argv[0] == "networksetup":
+                return 0, "Current Wi-Fi Network: HomeNet\n", ""
+            if argv[0] == "scutil":
+                return 0, "<dictionary> {\n  SSID_STR : HomeNet\n}\n", ""
+            if argv[0] == "wdutil":
+                return 0, WDUTIL_REDACTED, ""
+            return 1, "", "not available"
+
+        saved = darwin.run_cmd
+        darwin.run_cmd = fake_run
+        try:
+            rows = darwin.name_sources("en0")
+        finally:
+            darwin.run_cmd = saved
+        by_source = {source: (ssid, note) for source, ssid, note in rows}
+        self.assertEqual(by_source["networksetup"][0], "HomeNet")
+        self.assertEqual(by_source["scutil"][0], "HomeNet")
+        # wdutil answered, but macOS had blanked what it said.
+        self.assertEqual(by_source["wdutil"][0], "")
+        self.assertIn("redacted", by_source["wdutil"][1])
+        self.assertIn("system_profiler", by_source)
+
     def test_no_wifi_data_is_not_a_crash(self):
         self.assertEqual(darwin.parse_airport_json(json.dumps({"SPAirPortDataType": []})), [])
         self.assertFalse(darwin.parse_airport_current(json.dumps({}))["connected"])

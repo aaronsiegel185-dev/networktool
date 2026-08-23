@@ -694,6 +694,37 @@ def recover_hidden_names(ifname):
     return names
 
 
+def name_sources(ifname):
+    """What every source we know of says the network is called.
+
+    A "why is the name still hidden" report: each row is a command and the name
+    it gave back, so a blank one points at which door macOS closed.
+    """
+    rows = []
+    rc, out, err = run_cmd(["networksetup", "-getairportnetwork", ifname or "en0"], timeout=15)
+    rows.append(("networksetup", parse_networksetup_ssid(out) if rc == 0 else "",
+                 (err or out).strip() if rc != 0 else ""))
+    rc, out, err = run_cmd(
+        ["scutil"], timeout=15,
+        stdin="show State:/Network/Interface/%s/AirPort\n" % (ifname or "en0"))
+    found = parse_scutil_airport(out) if rc == 0 else {"ssid": "", "bssid": ""}
+    rows.append(("scutil", found["ssid"], "" if rc == 0 else (err or "").strip()))
+    rc, out, err = run_cmd(["wdutil", "info"], timeout=30)
+    if rc == 0 and "WIFI" in out.upper():
+        link = parse_wdutil(out)
+        rows.append(("wdutil", link.get("ssid", ""),
+                     "redacted by macOS" if link.get("redacted") else ""))
+    else:
+        rows.append(("wdutil", "", (err or "needs root").strip()))
+    try:
+        link = parse_airport_current(_system_profiler_wifi())
+        rows.append(("system_profiler", link.get("ssid", ""),
+                     "redacted by macOS" if link.get("redacted") else ""))
+    except NetToolError as exc:
+        rows.append(("system_profiler", "", str(exc)))
+    return rows
+
+
 def _unredact(link):
     """Fill a blanked name back in, and say where it came from."""
     if not link.get("redacted"):

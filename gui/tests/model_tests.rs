@@ -384,8 +384,28 @@ fn parses_the_location_permission_report() {
     assert_eq!(granted.status, 4);
     assert!(granted.services_enabled);
 
+    assert!(granted.can_prompt);
+    assert_eq!(granted.bundle_id, "dev.nettool.gui");
+    let by_source: Vec<&str> = granted.name_sources.iter().map(|s| s.source.as_str()).collect();
+    assert!(by_source.contains(&"networksetup"));
+    assert!(by_source.contains(&"scutil"));
+
     let refused: LocationPermission =
         serde_json::from_str(r#"{"status":2,"status_name":"denied","granted":false}"#).unwrap();
     assert!(!refused.granted);
     assert_eq!(refused.status_name, "denied");
+    // A plain command has no bundle, so it can never be prompted.
+    assert!(!refused.can_prompt);
+}
+
+#[test]
+fn names_the_authorisation_states() {
+    use nettool_gui::maclocation;
+    assert!(maclocation::granted(3));
+    assert!(maclocation::granted(4));
+    assert!(!maclocation::granted(maclocation::DENIED));
+    assert!(!maclocation::granted(maclocation::NOT_DETERMINED));
+    assert_eq!(maclocation::status_name(maclocation::DENIED), "denied");
+    assert_eq!(maclocation::status_name(4), "authorised (when in use)");
+    assert_eq!(maclocation::status_name(99), "unknown");
 }

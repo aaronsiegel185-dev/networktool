@@ -93,6 +93,38 @@ def _status(objc, manager, cls):
     return int(_call(objc, cls, "authorizationStatus", ctypes.c_int32))
 
 
+def _string(objc, obj):
+    """An NSString's bytes, or "" for nil."""
+    if not obj:
+        return ""
+    address = ctypes.cast(objc.objc_msgSend, ctypes.c_void_p).value
+    proto = ctypes.CFUNCTYPE(ctypes.c_char_p, ctypes.c_void_p, ctypes.c_void_p)
+    raw = proto(address)(obj, objc.sel_registerName(b"UTF8String"))
+    return raw.decode("utf-8", "replace") if raw else ""
+
+
+def bundle_id():
+    """This process's bundle identifier, or "" if it is not running from a bundle."""
+    objc, _cf = _runtime()
+    cls = objc.objc_getClass(b"NSBundle")
+    if not cls:
+        return ""
+    bundle = _call(objc, cls, "mainBundle")
+    return _string(objc, _call(objc, bundle, "bundleIdentifier"))
+
+
+def can_prompt():
+    """Whether macOS will even show this process a location prompt.
+
+    CoreLocation ignores a request from a process whose main bundle carries no
+    NSLocationWhenInUseUsageDescription - no prompt, no error, nothing. A plain
+    `python3 -m nettool` has no bundle at all, so it can never be asked; only
+    nettool.app can, because the request has to come from inside the bundle that
+    declares the string.
+    """
+    return bool(bundle_id())
+
+
 def status():
     """(code, human readable name) for this process's Location Services grant."""
     objc, _cf = _runtime()
@@ -120,6 +152,10 @@ def request(timeout=15.0):
     before = _status(objc, manager, cls)
     if before in GRANTED:
         return before, STATUS_NAMES[before]
+    if not can_prompt():
+        raise LocationError(
+            "macOS will not show a location prompt to a process without an app "
+            "bundle, and this one has none - use the button in nettool.app instead")
 
     _call(objc, manager, "requestWhenInUseAuthorization")
     # A location request is what actually makes CoreLocation surface the prompt;

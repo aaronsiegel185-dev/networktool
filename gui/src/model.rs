@@ -880,6 +880,24 @@ pub struct LocationPermission {
     pub status_name: String,
     #[serde(default)]
     pub granted: bool,
+    /// Empty when nettool is running as a plain command, which macOS never prompts.
+    #[serde(default)]
+    pub bundle_id: String,
+    #[serde(default)]
+    pub can_prompt: bool,
+    #[serde(default)]
+    pub name_sources: Vec<NameSource>,
+}
+
+/// What one source called the network, and why it could not say.
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct NameSource {
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub ssid: String,
+    #[serde(default)]
+    pub note: String,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]

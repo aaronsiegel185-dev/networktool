@@ -6,6 +6,7 @@
 //! without opening a window.
 
 pub mod app;
+pub mod maclocation;
 pub mod model;
 pub mod runner;
 pub mod ui;

@@ -2,5 +2,13 @@
   "services_enabled": true,
   "status": 4,
   "status_name": "authorised (when in use)",
-  "granted": true
+  "granted": true,
+  "bundle_id": "dev.nettool.gui",
+  "can_prompt": true,
+  "name_sources": [
+    {"source": "networksetup", "ssid": "HomeNet", "note": ""},
+    {"source": "scutil", "ssid": "HomeNet", "note": ""},
+    {"source": "wdutil", "ssid": "", "note": "needs root"},
+    {"source": "system_profiler", "ssid": "HomeNet", "note": ""}
+  ]
 }

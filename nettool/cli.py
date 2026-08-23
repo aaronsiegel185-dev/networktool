@@ -695,6 +695,7 @@ def cmd_wifi_permission(args):
     """Show, and optionally ask for, the macOS grant that unhides network names."""
     if sys.platform != "darwin":
         raise NetToolError("Location Services is a macOS concept; nothing to grant here")
+    from . import darwin as darwinmod
     from . import maclocation
 
     try:
@@ -707,16 +708,29 @@ def cmd_wifi_permission(args):
         raise NetToolError(str(exc))
 
     granted = code in maclocation.GRANTED
+    try:
+        bundle = maclocation.bundle_id()
+    except maclocation.LocationError:
+        bundle = ""
+    sources = darwinmod.name_sources(getattr(args, "interface", None))
     if args.json:
         _emit_json({"services_enabled": enabled, "status": code, "status_name": name,
-                    "granted": granted})
+                    "granted": granted, "bundle_id": bundle,
+                    "can_prompt": bool(bundle),
+                    "name_sources": [{"source": s, "ssid": v, "note": n}
+                                     for s, v, n in sources]})
         return 0
 
     section("location services")
     table([["system-wide", "on" if enabled else "off"],
-           ["this app", name],
+           ["this process", name],
+           ["running from", bundle or "no app bundle (a plain command)"],
+           ["can be prompted", "yes" if bundle else "no - only nettool.app can"],
            ["network names", "visible" if granted else "hidden"]],
           ["field", "value"])
+
+    section("what each source calls your network")
+    table([[s, v or "-", n] for s, v, n in sources], ["source", "ssid", "note"])
     if granted:
         sys.stdout.write("\nNetwork names are visible to whatever launched nettool.\n")
         return 0
@@ -724,10 +738,18 @@ def cmd_wifi_permission(args):
         sys.stdout.write("\nLocation Services is off system-wide. Turn it on in System "
                          "Settings > Privacy & Security > Location Services first.\n")
         return 1
+    if not bundle:
+        sys.stdout.write(
+            "\nmacOS only shows a location prompt to a process that has an app bundle "
+            "declaring why it wants location, and a command like this one has no bundle "
+            "at all - CoreLocation discards the request in silence. Open nettool.app and "
+            "use the \"Ask macOS for permission\" button in the Wi-Fi tab; the app "
+            "carries that declaration, so the prompt appears and the grant is recorded "
+            "against nettool.\n")
+        return 1
     if code == 0 and not args.request:
         sys.stdout.write("\nmacOS has never asked. Run `wifi permission --request` to "
-                         "make it ask - the prompt is attributed to whatever launched "
-                         "nettool (your terminal, or nettool.app).\n")
+                         "make it ask.\n")
         return 1
     if code == 2:
         sys.stdout.write("\nPermission was refused earlier, so macOS will not ask again. "
@@ -1080,6 +1102,7 @@ def build_parser():
         "permission",
         help="macOS: show or request the Location Services grant that reveals "
              "network names"))
+    q.add_argument("-i", "--interface")
     q.add_argument("--request", action="store_true",
                    help="ask macOS for the permission (shows the system prompt)")
     q.add_argument("-t", "--timeout", type=float, default=15.0,
