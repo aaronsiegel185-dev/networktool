@@ -12,7 +12,8 @@ use super::netmap;
 use crate::maclocation;
 use crate::macwifi;
 use crate::model::{
-    Bss, DiscoverReport, IfaceReport, SurveyEntry, WifiAnalyzeReport, WifiLink, WifiScanReport,
+    Bss, DiscoverReport, IfaceReport, Interference, SurveyEntry, WifiAnalyzeReport, WifiLink,
+    WifiScanReport,
     WirelessSurvey,
 };
 use crate::runner::{args, Job, JobMode, Settings};
@@ -956,6 +957,10 @@ impl WifiTab {
             ui.add_space(4.0);
         }
 
+        if let Some(interference) = report.report.interference.as_ref() {
+            interference_section(ui, interference);
+        }
+
         for (band, band_report) in &report.report.bands {
             let current_channel = if current.band == *band { current.channel } else { None };
             let best = band_report.best_channel;
@@ -1308,4 +1313,176 @@ fn access_point_row(ui: &mut egui::Ui, link: &WifiLink) {
             );
         }
     });
+}
+
+/// How contested our channel is, and which neighbour is doing it.
+///
+/// The headline is labelled with where it came from. On Linux the radio reports
+/// real airtime and that is what is shown; everywhere else it is modelled from
+/// the neighbours in the scan. The per-network shares are always modelled -
+/// working out who owns which microsecond would mean capturing the air rather
+/// than scanning it - so they are shares of the model, not of your airtime, and
+/// the caption says so rather than letting the bars imply otherwise.
+fn interference_section(ui: &mut egui::Ui, interference: &Interference) {
+    ui.add_space(8.0);
+    ui.horizontal_wrapped(|ui| {
+        widgets::heading(ui, "Interference");
+        ui.label(
+            egui::RichText::new(format!(
+                "channel {}  ·  {} MHz",
+                interference.channel, interference.width_mhz
+            ))
+            .size(11.0)
+            .color(widgets::MUTED),
+        );
+    });
+
+    let colour = interference_colour(&interference.rating);
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!("{:.0}%", interference.headline_pct))
+                .size(30.0)
+                .color(colour),
+        );
+        ui.vertical(|ui| {
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new(&interference.rating).size(14.0).color(colour));
+            ui.label(
+                egui::RichText::new(if interference.is_measured() {
+                    "measured airtime".to_string()
+                } else {
+                    format!("estimated from {} neighbours", interference.sources.len())
+                })
+                .size(11.0)
+                .color(widgets::MUTED),
+            );
+        });
+        ui.add_space(12.0);
+        ui.vertical(|ui| {
+            ui.add_space(10.0);
+            meter(ui, (interference.headline_pct / 100.0) as f32, colour, 260.0);
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} co-channel  ·  {} partly overlapping",
+                    interference.co_channel, interference.overlapping
+                ))
+                .size(11.0)
+                .color(widgets::MUTED),
+            );
+        });
+    });
+
+    // When the radio measured it, the model is still worth showing: a wide gap
+    // between them means something is using the air that is not a Wi-Fi network
+    // we can see - a microwave, a camera, a neighbour too far to scan.
+    if interference.is_measured() {
+        let modelled = interference.estimated_pct;
+        ui.label(
+            egui::RichText::new(format!(
+                "neighbours account for about {modelled:.0}% of that; the rest is \
+                 traffic we cannot attribute to a network in range",
+            ))
+            .size(11.0)
+            .color(widgets::MUTED),
+        );
+    }
+
+    if interference.sources.is_empty() {
+        ui.add_space(4.0);
+        ui.colored_label(widgets::OK, "Nothing else is on your channel.");
+        return;
+    }
+
+    ui.add_space(6.0);
+    egui::Grid::new("interference_sources")
+        .num_columns(6)
+        .spacing([14.0, 4.0])
+        .striped(true)
+        .show(ui, |ui| {
+            header_row(ui, &["network", "channel", "signal", "overlap", "share", ""]);
+            for source in interference.sources.iter().take(12) {
+                let name = ui.label(
+                    egui::RichText::new(source.display_ssid()).size(12.0),
+                );
+                if !source.bssid.is_empty() {
+                    name.on_hover_text(&source.bssid);
+                }
+
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{}{}",
+                        source.channel,
+                        if source.width_mhz > 20 {
+                            format!(" ({} MHz)", source.width_mhz)
+                        } else {
+                            String::new()
+                        }
+                    ))
+                    .size(12.0)
+                    .monospace(),
+                );
+
+                match source.signal_dbm {
+                    Some(dbm) => ui.colored_label(
+                        widgets::signal_color(dbm),
+                        egui::RichText::new(format!("{dbm:.0}")).size(12.0).monospace(),
+                    ),
+                    None => ui.label("-"),
+                };
+
+                ui.label(
+                    egui::RichText::new(format!("{:.0}%", source.overlap_pct))
+                        .size(12.0)
+                        .monospace()
+                        // A neighbour that only half-overlaps cannot hear us, so
+                        // it collides rather than taking turns - worse, despite
+                        // the smaller number.
+                        .color(if source.is_overlapping() {
+                            widgets::WARN
+                        } else {
+                            widgets::MUTED
+                        }),
+                );
+
+                ui.label(
+                    egui::RichText::new(format!("{:.0}%", source.share_pct))
+                        .size(12.0)
+                        .monospace(),
+                );
+                meter(ui, (source.share_pct / 100.0) as f32, colour, 120.0);
+                ui.end_row();
+            }
+        });
+
+    ui.label(
+        egui::RichText::new(
+            "Share is each network's portion of the interference we can model, not \
+             of your airtime. Partial overlap is listed as worse than co-channel \
+             because those radios cannot hear yours to take turns with it.",
+        )
+        .size(11.0)
+        .color(widgets::MUTED),
+    );
+}
+
+fn interference_colour(rating: &str) -> egui::Color32 {
+    match rating {
+        "clear" => widgets::OK,
+        "light" => widgets::OK,
+        "moderate" => widgets::WARN,
+        _ => widgets::CRIT,
+    }
+}
+
+/// A filled bar. Used for both the headline and each contributor, so the two
+/// read on the same scale.
+fn meter(ui: &mut egui::Ui, fraction: f32, colour: egui::Color32, width: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 8.0), egui::Sense::hover());
+    let painter = ui.painter();
+    painter.rect_filled(rect, 4.0, widgets::MUTED.gamma_multiply(0.25));
+    let filled = egui::Rect::from_min_size(
+        rect.min,
+        egui::vec2(rect.width() * fraction.clamp(0.0, 1.0), rect.height()),
+    );
+    painter.rect_filled(filled, 4.0, colour);
 }

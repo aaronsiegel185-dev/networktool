@@ -1099,6 +1099,86 @@ pub struct Recommendation {
     pub note: String,
 }
 
+/// One neighbour's contribution to the interference on our channel.
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct InterferenceSource {
+    #[serde(default)]
+    pub ssid: String,
+    #[serde(default)]
+    pub bssid: String,
+    #[serde(default)]
+    pub channel: i64,
+    #[serde(default)]
+    pub band: String,
+    #[serde(default)]
+    pub width_mhz: i64,
+    #[serde(default)]
+    pub signal_dbm: Option<f64>,
+    #[serde(default)]
+    pub overlap_pct: f64,
+    /// "co-channel" (it hears us and takes turns) or "overlapping" (it does not).
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub utilization_pct: Option<f64>,
+    #[serde(default)]
+    pub share_pct: f64,
+}
+
+impl InterferenceSource {
+    pub fn display_ssid(&self) -> &str {
+        if self.ssid.is_empty() {
+            "(hidden)"
+        } else {
+            &self.ssid
+        }
+    }
+
+    /// Partial overlap is the worse kind, so it is the one worth colouring.
+    pub fn is_overlapping(&self) -> bool {
+        self.kind == "overlapping"
+    }
+}
+
+/// How contested our channel is, and who is contesting it.
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct Interference {
+    #[serde(default)]
+    pub channel: i64,
+    #[serde(default)]
+    pub band: String,
+    #[serde(default)]
+    pub width_mhz: i64,
+    /// Real, from the radio's airtime survey - Linux only.
+    #[serde(default)]
+    pub measured_busy_pct: Option<f64>,
+    #[serde(default)]
+    pub measured_unattributed_pct: Option<f64>,
+    /// Modelled from the neighbours we can see.
+    #[serde(default)]
+    pub estimated_pct: f64,
+    #[serde(default)]
+    pub headline_pct: f64,
+    /// Which of the two the headline came from, so the figure is never passed
+    /// off as measured when it was inferred.
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub rating: String,
+    #[serde(default)]
+    pub co_channel: i64,
+    #[serde(default)]
+    pub overlapping: i64,
+    #[serde(default)]
+    pub sources: Vec<InterferenceSource>,
+}
+
+impl Interference {
+    pub fn is_measured(&self) -> bool {
+        self.measured_busy_pct.is_some()
+    }
+}
+
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct WifiAnalysis {
     #[serde(default)]
@@ -1113,6 +1193,9 @@ pub struct WifiAnalysis {
     /// Some name in this report was blanked by macOS.
     #[serde(default)]
     pub redacted: bool,
+    /// Absent when we are not associated - there is no "our channel" to contest.
+    #[serde(default)]
+    pub interference: Option<Interference>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]

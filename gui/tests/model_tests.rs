@@ -197,7 +197,7 @@ fn parses_wifi_survey() {
 #[test]
 fn parses_wifi_analysis_including_integer_keyed_maps() {
     let report: WifiAnalyzeReport = load("wifi_analyze.json");
-    assert_eq!(report.report.total_bss, 4);
+    assert_eq!(report.report.total_bss, 7);
 
     let band = report.report.bands.get("2.4").expect("2.4 GHz band");
     // Python emits integer dict keys as JSON strings; they must come back as numbers.
@@ -206,7 +206,7 @@ fn parses_wifi_analysis_including_integer_keyed_maps() {
     assert_eq!(band.best_channel, Some(11));
     let channel6 = &band.channels[&6];
     assert_eq!(channel6.strongest_ssid, "HomeNet");
-    assert_eq!(channel6.bss, 1);
+    assert_eq!(channel6.bss, 2, "HomeNet shares channel 6 with CoffeeShop");
 
     let five = report.report.bands.get("5").expect("5 GHz band");
     assert!(five.best_channel.is_some());
@@ -459,4 +459,51 @@ fn a_name_of_padding_is_no_name() {
         serde_json::from_str("{\"ssid\":\"\\u0000\\u0000\",\"connected\":true}").unwrap();
     assert_eq!(padded.display_ssid(), "(unknown)");
     assert!(padded.identity_missing());
+}
+
+#[test]
+fn parses_the_interference_breakdown() {
+    let report: WifiAnalyzeReport = load("wifi_analyze.json");
+    let interference = report
+        .report
+        .interference
+        .expect("the analyser emits a breakdown when associated");
+
+    assert_eq!(interference.channel, 6);
+    assert!(interference.is_measured(), "this fixture carries an airtime survey");
+    assert_eq!(interference.source, "airtime survey");
+    // The modelled figure is kept alongside the measured one: a gap between
+    // them is traffic no visible network accounts for.
+    assert!(interference.estimated_pct > 0.0);
+    assert_ne!(interference.estimated_pct, interference.headline_pct);
+
+    assert!(!interference.sources.is_empty());
+    let total: f64 = interference.sources.iter().map(|s| s.share_pct).sum();
+    assert!((total - 100.0).abs() < 1.5, "shares are proportions, got {total}");
+
+    // Sorted loudest-first, so the top row is the one worth acting on.
+    let first = &interference.sources[0];
+    assert!(first.share_pct >= interference.sources[1].share_pct);
+    assert!(first.overlap_pct > 0.0);
+    assert!(matches!(first.kind.as_str(), "co-channel" | "overlapping"));
+}
+
+#[test]
+fn an_unnamed_interferer_still_reads_as_something() {
+    let hidden: InterferenceSource =
+        serde_json::from_str(r#"{"ssid":"","channel":4,"kind":"overlapping"}"#).unwrap();
+    assert_eq!(hidden.display_ssid(), "(hidden)");
+    assert!(hidden.is_overlapping());
+
+    let named: InterferenceSource =
+        serde_json::from_str(r#"{"ssid":"CoffeeShop","kind":"co-channel"}"#).unwrap();
+    assert_eq!(named.display_ssid(), "CoffeeShop");
+    assert!(!named.is_overlapping());
+}
+
+#[test]
+fn a_report_without_an_association_has_no_breakdown() {
+    // Not associated means there is no "our channel" for anything to contest.
+    let report: WifiAnalysis = serde_json::from_str(r#"{"total_bss":3}"#).unwrap();
+    assert!(report.interference.is_none());
 }

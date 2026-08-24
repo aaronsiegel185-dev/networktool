@@ -866,6 +866,30 @@ def cmd_wifi_analyze(args):
         ap = _ap_label(current)
         if ap:
             sys.stdout.write("  via access point %s\n" % ap)
+    breakdown = report.get("interference")
+    if breakdown:
+        section("interference on channel %s" % breakdown["channel"])
+        sys.stdout.write("  %.0f%% (%s), from the %s\n"
+                         % (breakdown["headline_pct"], breakdown["rating"],
+                            breakdown["source"]))
+        if breakdown["measured_busy_pct"] is not None:
+            sys.stdout.write("  modelled from neighbours: %.0f%%\n"
+                             % breakdown["estimated_pct"])
+        if breakdown["sources"]:
+            table([[_ssid_label(s) if s["ssid"] else "(hidden)",
+                    s["bssid"], s["channel"],
+                    "%d" % s["width_mhz"],
+                    "" if s["signal_dbm"] is None else "%.0f" % s["signal_dbm"],
+                    "%.0f%%" % s["overlap_pct"], s["kind"],
+                    "%.0f%%" % s["share_pct"]]
+                   for s in breakdown["sources"][:15]],
+                  ["ssid", "bssid", "ch", "width", "dBm", "overlap", "relationship",
+                   "share"])
+            sys.stdout.write("\n  share is each network's portion of the modelled "
+                             "interference, not of your airtime.\n")
+        else:
+            sys.stdout.write("  nothing else is on your channel.\n")
+
     section("findings")
     for level, message in report["findings"]:
         sys.stdout.write("  %s %s\n" % (SEV_MARK.get(level, "[    ]"), message))

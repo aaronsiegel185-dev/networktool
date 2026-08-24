@@ -5,6 +5,7 @@ Radio state is read from the kernel (/proc/net/wireless, /sys) and from `iw`, wi
 stripped-down field box.
 """
 
+import math
 import re
 import sys
 import time
@@ -108,6 +109,68 @@ def overlap_factor(ch_a, ch_b, band):
             return 0.0
         return (5.0 - delta) / 5.0
     return 1.0 if ch_a == ch_b else 0.0
+
+
+# Partial overlap is worse than sharing a channel outright. Two APs on the same
+# channel hear each other and take turns; two that only half-overlap cannot
+# decode each other, so they transmit over each other and both sides retry.
+# That asymmetry is the whole reason 2.4 GHz planning uses only 1, 6 and 11.
+ADJACENT_PENALTY = 1.6
+
+# Below roughly this, a neighbour is neither loud enough to make us defer nor to
+# lift our noise floor meaningfully.
+AUDIBLE_DBM = -85.0
+
+
+# A wide 5/6 GHz channel is not centred on its primary: it is a fixed block that
+# the primary sits somewhere inside. An 80 MHz AP whose primary is channel 36
+# occupies 36-48 and therefore covers channel 48 completely - centring on the
+# primary would report no overlap at all, which is the opposite of the truth.
+# These anchor the block grid at the low edge of each band segment. UNII-3
+# starts a fresh alignment because the gap below it is 25 MHz, not 20.
+_BLOCK_ANCHORS = {
+    "5": (5735, 5170),        # UNII-3 first, then UNII-1/2; highest match wins
+    "6": (5945,),
+}
+
+
+def channel_span(channel, band="2.4", width_mhz=20):
+    """(low, high) MHz of spectrum a BSS occupies."""
+    centre = channel_to_freq(channel, band)
+    if not centre:
+        return None
+    width = max(20, int(width_mhz or 20))
+    low_edge = centre - 10.0
+    if width <= 20:
+        return (low_edge, low_edge + 20.0)
+
+    anchors = _BLOCK_ANCHORS.get(str(band))
+    if anchors:
+        for anchor in anchors:
+            if low_edge >= anchor:
+                blocks = int((low_edge - anchor) // width)
+                low = anchor + blocks * width
+                return (low, low + width)
+    # 2.4 GHz 40 MHz is primary plus a secondary above or below, and which side
+    # is not in a scan list - so centring is the best available guess there.
+    half = width / 2.0
+    return (centre - half, centre + half)
+
+
+def spectral_overlap(ours, theirs):
+    """How much of our channel a neighbour sits on top of, 0.0 to 1.0.
+
+    Measured against *our* width, because that is what we care about: an 80 MHz
+    neighbour covering our whole 20 MHz channel interferes with all of it, even
+    though we only occupy a quarter of theirs.
+    """
+    if ours is None or theirs is None:
+        return 0.0
+    low = max(ours[0], theirs[0])
+    high = min(ours[1], theirs[1])
+    if high <= low:
+        return 0.0
+    return (high - low) / (ours[1] - ours[0])
 
 
 def signal_weight(dbm):
@@ -766,8 +829,141 @@ def analyze(networks, current=None, survey=None):
             }
         report["bands"][band] = band_report
 
+    report["interference"] = interference_breakdown(networks, current, survey)
     _add_findings(report, networks, current, survey)
     return report
+
+
+# The impact at which a channel is treated as fully contested. One loud
+# neighbour sitting exactly on top of us scores about 1.0, which lands near 40%
+# - roughly the airtime you lose to a busy co-channel AP. It is a scale for a
+# heuristic, not a measurement, which is why the report says which it is.
+INTERFERENCE_SATURATION = 2.0
+
+INTERFERENCE_RATINGS = (
+    (15, "clear"),
+    (35, "light"),
+    (60, "moderate"),
+    (80, "heavy"),
+    (101, "severe"),
+)
+
+
+def interference_rating(percent):
+    for ceiling, name in INTERFERENCE_RATINGS:
+        if percent < ceiling:
+            return name
+    return "severe"
+
+
+def interference_breakdown(networks, current=None, survey=None):
+    """Which neighbours are on top of our channel, and how much each costs us.
+
+    Two numbers, kept apart because they are not the same kind of fact:
+
+    * `measured_busy_pct` is real, from the radio's own airtime survey, and only
+      Linux reports it. It says how much of the time the channel was busy - but
+      not who made it busy.
+    * `estimated_pct` is modelled from the neighbours we can see: how much of our
+      spectrum each one covers, how loud it is, and whether it can hear us.
+
+    Only the model can attribute a share to a particular AP, because working out
+    who owns which microsecond of airtime would mean capturing the air, not
+    scanning it. The shares are therefore always estimates, and are presented as
+    proportions of the modelled total rather than as absolute airtime.
+    """
+    cur = current or {}
+    channel = cur.get("channel")
+    band = cur.get("band") or (band_of(cur["freq"]) if cur.get("freq") else "")
+    if not channel or not band:
+        return None
+
+    width = cur.get("width_mhz") or 20
+    ours = channel_span(channel, band, width)
+    if ours is None:
+        return None
+    our_bssid = (cur.get("bssid") or "").lower()
+
+    sources = []
+    for net in networks:
+        if not net.get("channel"):
+            continue
+        bssid = (net.get("bssid") or "").lower()
+        if our_bssid and bssid == our_bssid:
+            continue                        # ourselves
+        if net.get("associated") and not our_bssid:
+            continue
+        their_band = net.get("band") or band_of(net.get("freq") or 0)
+        if their_band != band:
+            continue                        # a different band cannot reach us
+        overlap = spectral_overlap(ours, channel_span(net["channel"], their_band,
+                                                      net.get("width_mhz") or 20))
+        if overlap <= 0:
+            continue
+
+        dbm = net.get("signal_dbm")
+        weight = signal_weight(dbm)
+        audible = dbm is None or dbm >= AUDIBLE_DBM
+        co_channel = net["channel"] == channel
+        # Partial overlap is worse than sharing: co-channel APs hear us and take
+        # turns, half-overlapping ones cannot decode us and simply collide.
+        penalty = 1.0 if co_channel else ADJACENT_PENALTY
+
+        utilisation = net.get("utilization_pct")
+        if utilisation is None:
+            airtime = 1.0                   # unknown: assume it uses the channel
+        else:
+            # Floored, because even an idle AP beacons ten times a second.
+            airtime = max(0.25, min(1.0, utilisation / 100.0))
+
+        impact = overlap * weight * penalty * airtime
+        if not audible:
+            impact *= 0.15                  # too quiet to defer to or be deafened by
+
+        sources.append({
+            "ssid": net.get("ssid") or "",
+            "bssid": net.get("bssid", ""),
+            "channel": net["channel"],
+            "band": their_band,
+            "width_mhz": net.get("width_mhz") or 20,
+            "signal_dbm": dbm,
+            "overlap_pct": round(overlap * 100, 1),
+            "kind": "co-channel" if co_channel else "overlapping",
+            "utilization_pct": utilisation,
+            "impact": round(impact, 4),
+        })
+
+    total_impact = sum(entry["impact"] for entry in sources)
+    estimated = 100.0 * (1.0 - math.exp(-total_impact / INTERFERENCE_SATURATION))
+    for entry in sources:
+        entry["share_pct"] = round(entry["impact"] / total_impact * 100, 1) if total_impact else 0.0
+    sources.sort(key=lambda entry: entry["impact"], reverse=True)
+
+    measured = None
+    measured_unattributed = None
+    for entry in survey or []:
+        if entry.get("in_use"):
+            measured = entry.get("busy_pct")
+            measured_unattributed = entry.get("interference_pct")
+            break
+
+    headline = measured if measured is not None else estimated
+    return {
+        "channel": channel,
+        "band": band,
+        "width_mhz": width,
+        "span_mhz": [ours[0], ours[1]],
+        "measured_busy_pct": round(measured, 1) if measured is not None else None,
+        "measured_unattributed_pct": (round(measured_unattributed, 1)
+                                      if measured_unattributed is not None else None),
+        "estimated_pct": round(estimated, 1),
+        "headline_pct": round(headline, 1),
+        "source": "airtime survey" if measured is not None else "neighbour model",
+        "rating": interference_rating(headline),
+        "co_channel": sum(1 for e in sources if e["kind"] == "co-channel"),
+        "overlapping": sum(1 for e in sources if e["kind"] == "overlapping"),
+        "sources": sources,
+    }
 
 
 def _add_findings(report, networks, current, survey):
@@ -821,6 +1017,24 @@ def _add_findings(report, networks, current, survey):
                 findings.append(("warn", "%.0f%% of airtime is busy with traffic we cannot "
                                          "decode - non-Wi-Fi interference or distant "
                                          "co-channel APs." % entry["interference_pct"]))
+
+    breakdown = report.get("interference")
+    if breakdown and breakdown["sources"]:
+        worst = breakdown["sources"][0]
+        level = {"clear": "ok", "light": "info", "moderate": "warn",
+                 "heavy": "critical", "severe": "critical"}[breakdown["rating"]]
+        findings.append((level, "Channel %s is %s: %.0f%% interference (%s). %d "
+                                "co-channel, %d partially overlapping."
+                         % (breakdown["channel"], breakdown["rating"],
+                            breakdown["headline_pct"], breakdown["source"],
+                            breakdown["co_channel"], breakdown["overlapping"])))
+        if worst["share_pct"] >= 25:
+            findings.append(("info", "%s (%s, ch %s%s) accounts for about %.0f%% of it."
+                             % (worst["ssid"] or "an unnamed network",
+                                worst["kind"], worst["channel"],
+                                ", %d MHz wide" % worst["width_mhz"]
+                                if worst["width_mhz"] > 20 else "",
+                                worst["share_pct"])))
 
     cur_channel = cur.get("channel")
     cur_band = cur.get("band") or (band_of(cur["freq"]) if cur.get("freq") else None)

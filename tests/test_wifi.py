@@ -260,6 +260,142 @@ class TestAnalysis(unittest.TestCase):
         text = " ".join(msg for _lvl, msg in report["findings"])
         self.assertNotIn("Location Services", text)
 
+class TestSpectralOverlap(unittest.TestCase):
+    """Which neighbours are physically on top of us."""
+
+    def test_a_20mhz_channel_spans_its_own_20mhz(self):
+        self.assertEqual(wifi.channel_span(6, "2.4", 20), (2427.0, 2447.0))
+
+    def test_wide_5ghz_channels_are_blocks_not_centred_on_the_primary(self):
+        # An 80 MHz AP whose primary is channel 36 occupies 36-48. Centring the
+        # block on the primary would put it at 5140-5220 and report no overlap
+        # with channel 48 at all, which is the opposite of the truth.
+        self.assertEqual(wifi.channel_span(36, "5", 80), (5170, 5250))
+        self.assertEqual(wifi.channel_span(48, "5", 80), (5170, 5250))
+        self.assertEqual(wifi.channel_span(52, "5", 80), (5250, 5330))
+
+    def test_unii3_has_its_own_alignment(self):
+        # The gap below channel 149 is 25 MHz, not 20, so the block grid restarts.
+        self.assertEqual(wifi.channel_span(149, "5", 80), (5735, 5815))
+        self.assertEqual(wifi.channel_span(157, "5", 80), (5735, 5815))
+
+    def test_overlap_is_measured_against_our_own_width(self):
+        ours = wifi.channel_span(48, "5", 20)
+        # An 80 MHz neighbour covers all of our 20 MHz, even though we cover a
+        # quarter of theirs - what matters is how much of ours is contested.
+        self.assertEqual(wifi.spectral_overlap(ours, wifi.channel_span(36, "5", 80)), 1.0)
+        # And the reverse: a 20 MHz neighbour covers half of our 40 MHz.
+        wide = wifi.channel_span(6, "2.4", 40)
+        self.assertAlmostEqual(
+            wifi.spectral_overlap(wide, wifi.channel_span(6, "2.4", 20)), 0.5)
+
+    def test_partial_overlap_in_24ghz(self):
+        ours = wifi.channel_span(6, "2.4", 20)
+        self.assertAlmostEqual(
+            wifi.spectral_overlap(ours, wifi.channel_span(4, "2.4", 20)), 0.5)
+        self.assertEqual(wifi.spectral_overlap(ours, wifi.channel_span(11, "2.4", 20)), 0.0)
+
+    def test_a_different_band_never_overlaps(self):
+        self.assertEqual(
+            wifi.spectral_overlap(wifi.channel_span(6, "2.4", 20),
+                                  wifi.channel_span(36, "5", 20)), 0.0)
+
+
+class TestInterferenceBreakdown(unittest.TestCase):
+    def setUp(self):
+        self.current = {"channel": 48, "band": "5", "width_mhz": 20,
+                        "bssid": "aa:00:00:00:00:01", "signal_dbm": -45}
+        self.nets = [
+            {"ssid": "Ours", "bssid": "aa:00:00:00:00:01", "channel": 48, "band": "5",
+             "width_mhz": 20, "signal_dbm": -45, "associated": True},
+            {"ssid": "Wide", "bssid": "aa:00:00:00:00:02", "channel": 36, "band": "5",
+             "width_mhz": 80, "signal_dbm": -55},
+            {"ssid": "Same", "bssid": "aa:00:00:00:00:03", "channel": 48, "band": "5",
+             "width_mhz": 20, "signal_dbm": -70},
+            {"ssid": "Elsewhere", "bssid": "aa:00:00:00:00:04", "channel": 149,
+             "band": "5", "width_mhz": 80, "signal_dbm": -50},
+        ]
+
+    def test_our_own_bss_is_not_counted_against_us(self):
+        report = wifi.interference_breakdown(self.nets, self.current)
+        self.assertNotIn("Ours", [s["ssid"] for s in report["sources"]])
+
+    def test_networks_that_do_not_overlap_are_left_out(self):
+        report = wifi.interference_breakdown(self.nets, self.current)
+        self.assertNotIn("Elsewhere", [s["ssid"] for s in report["sources"]])
+
+    def test_shares_are_proportions_of_the_whole(self):
+        report = wifi.interference_breakdown(self.nets, self.current)
+        self.assertAlmostEqual(sum(s["share_pct"] for s in report["sources"]), 100.0,
+                               places=0)
+
+    def test_the_loudest_widest_neighbour_dominates(self):
+        report = wifi.interference_breakdown(self.nets, self.current)
+        self.assertEqual(report["sources"][0]["ssid"], "Wide")
+        self.assertGreater(report["sources"][0]["share_pct"],
+                           report["sources"][1]["share_pct"])
+
+    def test_partial_overlap_counts_for_more_than_co_channel(self):
+        # Two identical neighbours, one on our channel and one half off it: the
+        # one that cannot hear us should score higher, because it collides
+        # instead of taking turns.
+        nets = [
+            {"ssid": "OnUs", "bssid": "b:1", "channel": 6, "band": "2.4",
+             "width_mhz": 20, "signal_dbm": -60},
+            {"ssid": "HalfOff", "bssid": "b:2", "channel": 4, "band": "2.4",
+             "width_mhz": 40, "signal_dbm": -60},
+        ]
+        report = wifi.interference_breakdown(
+            nets, {"channel": 6, "band": "2.4", "width_mhz": 20, "bssid": "b:0"})
+        by_name = {s["ssid"]: s for s in report["sources"]}
+        self.assertEqual(by_name["OnUs"]["kind"], "co-channel")
+        self.assertEqual(by_name["HalfOff"]["kind"], "overlapping")
+        self.assertGreater(by_name["HalfOff"]["impact"], by_name["OnUs"]["impact"])
+
+    def test_a_whisper_barely_registers(self):
+        nets = [{"ssid": "Loud", "bssid": "b:1", "channel": 6, "band": "2.4",
+                 "width_mhz": 20, "signal_dbm": -50},
+                {"ssid": "Whisper", "bssid": "b:2", "channel": 6, "band": "2.4",
+                 "width_mhz": 20, "signal_dbm": -92}]
+        report = wifi.interference_breakdown(
+            nets, {"channel": 6, "band": "2.4", "width_mhz": 20, "bssid": "b:0"})
+        by_name = {s["ssid"]: s for s in report["sources"]}
+        self.assertLess(by_name["Whisper"]["share_pct"], 5)
+
+    def test_a_measured_survey_outranks_the_model(self):
+        # The radio's own airtime figure is a measurement; ours is an estimate.
+        # Both are reported, and which is which has to be visible.
+        survey = [{"channel": 48, "in_use": True, "busy_pct": 88.0,
+                   "interference_pct": 60.0}]
+        report = wifi.interference_breakdown(self.nets, self.current, survey)
+        self.assertEqual(report["measured_busy_pct"], 88.0)
+        self.assertEqual(report["headline_pct"], 88.0)
+        self.assertEqual(report["source"], "airtime survey")
+        self.assertNotEqual(report["estimated_pct"], 88.0)
+
+    def test_without_a_survey_the_model_is_named_as_such(self):
+        report = wifi.interference_breakdown(self.nets, self.current)
+        self.assertIsNone(report["measured_busy_pct"])
+        self.assertEqual(report["source"], "neighbour model")
+        self.assertEqual(report["headline_pct"], report["estimated_pct"])
+
+    def test_an_empty_channel_rates_clear(self):
+        report = wifi.interference_breakdown([self.nets[0]], self.current)
+        self.assertEqual(report["sources"], [])
+        self.assertEqual(report["headline_pct"], 0.0)
+        self.assertEqual(report["rating"], "clear")
+
+    def test_not_associated_means_there_is_no_channel_to_contest(self):
+        self.assertIsNone(wifi.interference_breakdown(self.nets, {}))
+        self.assertIsNone(wifi.interference_breakdown(self.nets, None))
+
+    def test_the_analysis_carries_it_and_says_so(self):
+        report = wifi.analyze(self.nets, self.current)
+        self.assertIsNotNone(report["interference"])
+        text = " ".join(message for _level, message in report["findings"])
+        self.assertIn("interference", text)
+
+
     def test_clean_report_when_nothing_wrong(self):
         report = wifi.analyze([], {})
         self.assertEqual(report["findings"][0][0], "ok")

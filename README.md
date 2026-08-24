@@ -182,6 +182,22 @@ Two macOS-specific caveats worth knowing:
   and marks the current one. macOS hides the BSSID under the same Location
   Services rule as the SSID; in the app CoreWLAN supplies it, and in the terminal
   `sudo` lets `scutil` do so.
+* **Interference is attributed per network.** `wifi analyze` and the app's Wi-Fi
+  tab both break down what is contesting your channel: how much of your
+  spectrum each neighbour covers, how loud it is, whether it is co-channel or
+  only partly overlapping, and what share of the total interference it accounts
+  for. Wide channels are handled as the fixed blocks they are - an 80 MHz AP
+  whose primary is channel 36 occupies 36-48 and therefore sits on top of
+  channel 48 completely.
+
+  Two figures are reported, and never conflated. `measured_busy_pct` comes from
+  the radio's own airtime survey and is real, but says nothing about who made
+  the channel busy; `estimated_pct` is modelled from the neighbours in the scan
+  and is the only one that can attribute a share to a particular AP. Working out
+  who owns which microsecond of airtime would mean capturing the air rather than
+  scanning it, so the per-network shares are shares of the model. Where both
+  exist, a gap between them is traffic no visible network accounts for - a
+  microwave, a camera, or an AP too distant to scan.
 * **No airtime survey.** The "60% of airtime is undecodable" line that Linux gets from
   `iw survey` has no macOS equivalent, so the interference verdict there is based on
   neighbour count, overlap, signal and SNR.

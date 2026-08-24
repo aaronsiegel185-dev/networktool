@@ -1,35 +1,53 @@
 {
   "source": "iw",
   "report": {
-    "total_bss": 4,
+    "total_bss": 7,
     "bands": {
       "2.4": {
-        "bss_count": 2,
+        "bss_count": 5,
         "channels": {
           "1": {
             "bss": 1,
             "cochannel": 1,
-            "overlapping": 0,
-            "strongest_dbm": -72.0,
+            "overlapping": 1,
+            "strongest_dbm": -72,
             "strongest_ssid": "NeighborWifi",
             "utilization_pct": null
           },
-          "6": {
+          "4": {
             "bss": 1,
             "cochannel": 1,
-            "overlapping": 0,
-            "strongest_dbm": -47.0,
+            "overlapping": 4,
+            "strongest_dbm": -79,
+            "strongest_ssid": "(hidden)",
+            "utilization_pct": null
+          },
+          "6": {
+            "bss": 2,
+            "cochannel": 2,
+            "overlapping": 2,
+            "strongest_dbm": -47,
             "strongest_ssid": "HomeNet",
             "utilization_pct": 50.2
+          },
+          "8": {
+            "bss": 1,
+            "cochannel": 1,
+            "overlapping": 3,
+            "strongest_dbm": -66,
+            "strongest_ssid": "PrinterAP",
+            "utilization_pct": null
           }
         },
         "congestion_score": {
-          "1": 0.51,
-          "6": 1.5,
-          "11": 0.0
+          "1": 0.65,
+          "4": 2.04,
+          "6": 2.86,
+          "8": 2.07,
+          "11": 0.26
         },
         "best_channel": 11,
-        "best_score": 0.0
+        "best_score": 0.26
       },
       "5": {
         "bss_count": 2,
@@ -38,7 +56,7 @@
             "bss": 1,
             "cochannel": 1,
             "overlapping": 0,
-            "strongest_dbm": -58.0,
+            "strongest_dbm": -58,
             "strongest_ssid": "HomeNet-5G",
             "utilization_pct": null
           },
@@ -46,8 +64,8 @@
             "bss": 1,
             "cochannel": 1,
             "overlapping": 0,
-            "strongest_dbm": -80.0,
-            "strongest_ssid": "(hidden)",
+            "strongest_dbm": -80,
+            "strongest_ssid": "FarAway",
             "utilization_pct": null
           }
         },
@@ -60,45 +78,34 @@
       }
     },
     "current": {
+      "interface": "wlan0",
       "connected": true,
       "ssid": "HomeNet",
       "bssid": "3c:37:86:11:22:33",
-      "freq": 2437,
-      "signal_dbm": -47.0,
-      "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
-      "rx_bitrate": "130.0 MBit/s MCS 15",
+      "bssid_vendor": "Ubiquiti Inc",
       "channel": 6,
       "band": "2.4",
+      "freq": 2437,
+      "width_mhz": 40,
+      "signal_dbm": -47.0,
+      "noise_dbm": -89,
+      "snr_db": 42.0,
+      "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
+      "rx_bitrate": "130.0 MBit/s MCS 15",
       "rating": "excellent",
       "quality_pct": 72,
-      "interface": "wlan0",
+      "redacted": false,
       "station": {
         "mac": "3c:37:86:11:22:33",
-        "inactive_time": 20,
-        "rx_bytes": 91827364,
-        "rx_packets": 123456,
-        "tx_bytes": 1827364,
-        "tx_packets": 10000,
         "tx_retries": 2500,
-        "tx_failed": 250,
-        "beacon_loss": 3,
-        "signal_dbm": -47,
-        "signal_avg_dbm": -48,
-        "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
-        "connected_time": 3600,
         "retry_pct": 25.0,
-        "fail_pct": 2.5
+        "tx_failed": 250,
+        "fail_pct": 2.5,
+        "connected_time": 3600
       },
       "proc": {
-        "link_quality": 62.0,
-        "signal_dbm": -47.0,
-        "noise_dbm": -89.0,
-        "tx_retries": 2500,
-        "missed_beacons": 4,
-        "rx_invalid_crypt": 0
-      },
-      "noise_dbm": -89.0,
-      "snr_db": 42.0
+        "missed_beacons": 4
+      }
     },
     "findings": [
       [
@@ -122,8 +129,20 @@
         "60% of airtime is busy with traffic we cannot decode - non-Wi-Fi interference or distant co-channel APs."
       ],
       [
+        "critical",
+        "Channel 6 is heavy: 75% interference (airtime survey). 1 co-channel, 3 partially overlapping."
+      ],
+      [
         "info",
-        "Channel 11 looks clearer than your current channel 6 (load 0.0 vs 1.5)."
+        "PrinterAP (overlapping, ch 8) accounts for about 40% of it."
+      ],
+      [
+        "warn",
+        "2 BSSes overlap channel 6 without sharing it - partial overlap is worse than co-channel."
+      ],
+      [
+        "info",
+        "Channel 11 looks clearer than your current channel 6 (load 0.3 vs 2.9)."
       ],
       [
         "info",
@@ -137,7 +156,7 @@
     "recommendations": {
       "2.4": {
         "channel": 11,
-        "score": 0.0,
+        "score": 0.26,
         "note": "lowest weighted co/adjacent-channel load; 1/6/11 only (2.4 GHz channels overlap)"
       },
       "5": {
@@ -145,168 +164,256 @@
         "score": 0.33,
         "note": "lowest weighted co/adjacent-channel load; non-DFS preferred"
       }
+    },
+    "redacted": false,
+    "interference": {
+      "channel": 6,
+      "band": "2.4",
+      "width_mhz": 40,
+      "span_mhz": [
+        2417.0,
+        2457.0
+      ],
+      "measured_busy_pct": 75.0,
+      "measured_unattributed_pct": 60.0,
+      "estimated_pct": 47.3,
+      "headline_pct": 75.0,
+      "source": "airtime survey",
+      "rating": "heavy",
+      "co_channel": 1,
+      "overlapping": 3,
+      "sources": [
+        {
+          "ssid": "PrinterAP",
+          "bssid": "de:ad:be:ef:00:02",
+          "channel": 8,
+          "band": "2.4",
+          "width_mhz": 20,
+          "signal_dbm": -66,
+          "overlap_pct": 50.0,
+          "kind": "overlapping",
+          "utilization_pct": null,
+          "impact": 0.5156,
+          "share_pct": 40.3
+        },
+        {
+          "ssid": "CoffeeShop",
+          "bssid": "de:ad:be:ef:00:01",
+          "channel": 6,
+          "band": "2.4",
+          "width_mhz": 20,
+          "signal_dbm": -61,
+          "overlap_pct": 50.0,
+          "kind": "co-channel",
+          "utilization_pct": null,
+          "impact": 0.3778,
+          "share_pct": 29.5
+        },
+        {
+          "ssid": "",
+          "bssid": "de:ad:be:ef:00:03",
+          "channel": 4,
+          "band": "2.4",
+          "width_mhz": 20,
+          "signal_dbm": -79,
+          "overlap_pct": 50.0,
+          "kind": "overlapping",
+          "utilization_pct": null,
+          "impact": 0.2844,
+          "share_pct": 22.2
+        },
+        {
+          "ssid": "NeighborWifi",
+          "bssid": "aa:bb:cc:00:11:22",
+          "channel": 1,
+          "band": "2.4",
+          "width_mhz": 20,
+          "signal_dbm": -72,
+          "overlap_pct": 12.5,
+          "kind": "overlapping",
+          "utilization_pct": null,
+          "impact": 0.1022,
+          "share_pct": 8.0
+        }
+      ]
     }
   },
   "networks": [
     {
-      "bssid": "3c:37:86:11:22:33",
       "ssid": "HomeNet",
-      "signal_dbm": -47.0,
-      "freq": 2437,
+      "bssid": "3c:37:86:11:22:33",
       "channel": 6,
       "band": "2.4",
-      "security": [
-        "WPA2/WPA3"
-      ],
       "width_mhz": 40,
-      "stations": 7,
-      "utilization_pct": 50.2,
+      "signal_dbm": -47,
       "associated": true,
-      "capabilities": "ESS Privacy ShortSlotTime (0x0431)",
-      "beacon_interval": 100,
-      "last_seen_ms": 120,
-      "country": "US",
       "standards": [
         "n"
       ],
+      "security": [
+        "WPA2/WPA3"
+      ],
+      "utilization_pct": 50.2,
+      "stations": 7,
+      "freq": 2437,
       "quality_pct": 72,
       "rating": "excellent"
     },
     {
-      "bssid": "60:22:32:aa:bb:cc",
-      "ssid": "NeighborWifi",
-      "signal_dbm": -72.0,
-      "freq": 2412,
-      "channel": 1,
-      "band": "2.4",
-      "security": [
-        "WPA2/WPA3",
-        "WPA3-SAE"
-      ],
-      "width_mhz": 20,
-      "stations": null,
-      "utilization_pct": null,
-      "associated": false,
-      "capabilities": "",
-      "beacon_interval": null,
-      "last_seen_ms": null,
-      "country": "",
-      "standards": [],
-      "quality_pct": 30,
-      "rating": "marginal"
-    },
-    {
-      "bssid": "04:18:d6:de:ad:01",
       "ssid": "HomeNet-5G",
-      "signal_dbm": -58.0,
-      "freq": 5180,
+      "bssid": "3c:37:86:11:22:34",
       "channel": 36,
       "band": "5",
-      "security": [
-        "WPA2/WPA3"
-      ],
       "width_mhz": 80,
-      "stations": null,
-      "utilization_pct": null,
-      "associated": false,
-      "capabilities": "",
-      "beacon_interval": null,
-      "last_seen_ms": null,
-      "country": "",
+      "signal_dbm": -58,
       "standards": [
         "ac",
         "ax"
       ],
+      "security": [
+        "WPA2/WPA3"
+      ],
+      "freq": 5180,
       "quality_pct": 53,
-      "rating": "good"
+      "rating": "good",
+      "utilization_pct": null,
+      "stations": null
     },
     {
-      "bssid": "04:18:d6:de:ad:02",
+      "ssid": "NeighborWifi",
+      "bssid": "aa:bb:cc:00:11:22",
+      "channel": 1,
+      "band": "2.4",
+      "width_mhz": 20,
+      "signal_dbm": -72,
+      "standards": [
+        "n"
+      ],
+      "security": [
+        "WPA2/WPA3",
+        "WPA3-SAE"
+      ],
+      "freq": 2412,
+      "quality_pct": 30,
+      "rating": "marginal",
+      "utilization_pct": null,
+      "stations": null
+    },
+    {
+      "ssid": "CoffeeShop",
+      "bssid": "de:ad:be:ef:00:01",
+      "channel": 6,
+      "band": "2.4",
+      "width_mhz": 20,
+      "signal_dbm": -61,
+      "standards": [
+        "n"
+      ],
+      "security": [],
+      "freq": 2437,
+      "quality_pct": 48,
+      "rating": "ok (min for voice/video)",
+      "utilization_pct": null,
+      "stations": null
+    },
+    {
+      "ssid": "PrinterAP",
+      "bssid": "de:ad:be:ef:00:02",
+      "channel": 8,
+      "band": "2.4",
+      "width_mhz": 20,
+      "signal_dbm": -66,
+      "standards": [
+        "g"
+      ],
+      "security": [
+        "WPA2"
+      ],
+      "freq": 2447,
+      "quality_pct": 40,
+      "rating": "ok (min for voice/video)",
+      "utilization_pct": null,
+      "stations": null
+    },
+    {
       "ssid": "",
-      "signal_dbm": -80.0,
-      "freq": 5745,
+      "bssid": "de:ad:be:ef:00:03",
+      "channel": 4,
+      "band": "2.4",
+      "width_mhz": 20,
+      "signal_dbm": -79,
+      "standards": [
+        "n"
+      ],
+      "security": [
+        "WPA2"
+      ],
+      "freq": 2427,
+      "quality_pct": 18,
+      "rating": "poor",
+      "utilization_pct": null,
+      "stations": null
+    },
+    {
+      "ssid": "FarAway",
+      "bssid": "de:ad:be:ef:00:04",
       "channel": 149,
       "band": "5",
-      "security": [
-        "open"
+      "width_mhz": 80,
+      "signal_dbm": -80,
+      "standards": [
+        "ac"
       ],
-      "width_mhz": 20,
-      "stations": null,
-      "utilization_pct": null,
-      "associated": false,
-      "capabilities": "",
-      "beacon_interval": null,
-      "last_seen_ms": null,
-      "country": "",
-      "standards": [],
+      "security": [
+        "WPA2"
+      ],
+      "freq": 5745,
       "quality_pct": 17,
-      "rating": "poor"
+      "rating": "poor",
+      "utilization_pct": null,
+      "stations": null
     }
   ],
   "current": {
+    "interface": "wlan0",
     "connected": true,
     "ssid": "HomeNet",
     "bssid": "3c:37:86:11:22:33",
-    "freq": 2437,
-    "signal_dbm": -47.0,
-    "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
-    "rx_bitrate": "130.0 MBit/s MCS 15",
+    "bssid_vendor": "Ubiquiti Inc",
     "channel": 6,
     "band": "2.4",
+    "freq": 2437,
+    "width_mhz": 40,
+    "signal_dbm": -47.0,
+    "noise_dbm": -89,
+    "snr_db": 42.0,
+    "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
+    "rx_bitrate": "130.0 MBit/s MCS 15",
     "rating": "excellent",
     "quality_pct": 72,
-    "interface": "wlan0",
+    "redacted": false,
     "station": {
       "mac": "3c:37:86:11:22:33",
-      "inactive_time": 20,
-      "rx_bytes": 91827364,
-      "rx_packets": 123456,
-      "tx_bytes": 1827364,
-      "tx_packets": 10000,
       "tx_retries": 2500,
-      "tx_failed": 250,
-      "beacon_loss": 3,
-      "signal_dbm": -47,
-      "signal_avg_dbm": -48,
-      "tx_bitrate": "144.4 MBit/s MCS 15 short GI",
-      "connected_time": 3600,
       "retry_pct": 25.0,
-      "fail_pct": 2.5
+      "tx_failed": 250,
+      "fail_pct": 2.5,
+      "connected_time": 3600
     },
     "proc": {
-      "link_quality": 62.0,
-      "signal_dbm": -47.0,
-      "noise_dbm": -89.0,
-      "tx_retries": 2500,
-      "missed_beacons": 4,
-      "rx_invalid_crypt": 0
-    },
-    "noise_dbm": -89.0,
-    "snr_db": 42.0,
-    "bssid_vendor": "Ubiquiti Inc"
+      "missed_beacons": 4
+    }
   },
   "survey": [
     {
-      "iface": "wlan0",
-      "in_use": false,
-      "freq": 2412,
-      "channel": 1,
-      "band": "2.4"
-    },
-    {
-      "iface": "wlan0",
-      "in_use": true,
-      "freq": 2437,
       "channel": 6,
+      "freq": 2437,
       "band": "2.4",
+      "in_use": true,
       "noise_dbm": -89,
-      "active_time": 10000,
-      "busy_time": 7500,
-      "receive_time": 1000,
-      "transmit_time": 500,
       "busy_pct": 75.0,
-      "tx_pct": 5.0,
       "rx_pct": 10.0,
+      "tx_pct": 5.0,
       "interference_pct": 60.0
     }
   ]
