@@ -182,12 +182,34 @@ def _no_such_device(ifname, error=None):
     return " ".join(message)
 
 
-def capturable_interfaces(names=None):
+_capturable_cache = {"at": 0.0, "names": None, "value": None}
+_CAPTURABLE_TTL = 30.0
+
+
+def capturable_interfaces(names=None, max_age=_CAPTURABLE_TTL):
     """Which interfaces a BPF descriptor will actually attach to.
 
     This is `tcpdump -D` in miniature: the only reliable way to know is to try, since
     plenty of interfaces show up in ifconfig but have no BPF device behind them.
+
+    Cached, because trying means claiming a real capture device for each of the
+    two dozen interfaces a Mac reports - and this is asked on every `serve`
+    handshake. Churning every BPF device on the machine to answer a question
+    whose answer changes about once a day is a poor trade.
     """
+    import time
+
+    now = time.time()
+    if (_capturable_cache["value"] is not None
+            and _capturable_cache["names"] == names
+            and now - _capturable_cache["at"] < max_age):
+        return _capturable_cache["value"]
+    found = _probe_capturable(names)
+    _capturable_cache.update({"at": now, "names": names, "value": found})
+    return found
+
+
+def _probe_capturable(names=None):
     if IS_WINDOWS:
         from . import npcap
 
@@ -440,7 +462,14 @@ class BpfSocket(LinkSocket):
             raise NetToolError("cannot capture on %s (%s): %s" % (ifname, step, exc))
 
         if monitor:
-            self._enable_monitor()
+            try:
+                self._enable_monitor()
+            except (NetToolError, OSError):
+                # Leaking the descriptor here would take a capture device out of
+                # circulation for the life of the process, and the next attempt
+                # would fail for a reason that has nothing to do with monitor mode.
+                os.close(self._fd)
+                raise
 
         # Everything below is a refinement: warn, but keep the capture.
         try:
@@ -491,22 +520,58 @@ class BpfSocket(LinkSocket):
         self.monitor = True
 
     def _open_device(self):
-        last_error = None
+        """Claim a free /dev/bpf descriptor.
+
+        macOS hands these out one process at a time and clones new ones on
+        demand, so walking upwards until one opens is the normal way in.
+        """
+        reasons = {}
         for index in range(0, 256):
             path = "/dev/bpf%d" % index
             try:
                 return os.open(path, os.O_RDWR)
             except OSError as exc:
-                last_error = exc
-                if exc.errno in (errno.EBUSY, errno.ENOENT):
-                    continue
+                reasons[exc.errno] = reasons.get(exc.errno, 0) + 1
                 if exc.errno in (errno.EACCES, errno.EPERM):
                     raise NetToolError(
                         "no permission to open %s. Either run with sudo, or install the "
                         "BPF access helper (macos/install-bpf-access.sh) once so your "
                         "user can capture without sudo." % path)
                 continue
-        raise NetToolError("could not open any /dev/bpf device: %s" % last_error)
+        raise NetToolError(self._exhausted_message(reasons))
+
+    @staticmethod
+    def _exhausted_message(reasons):
+        """Say which way the devices refused, and who to go and look for.
+
+        Reporting only the last device's errno - which is what this used to do -
+        turns "every capture device on the machine is taken" into a stray
+        "Resource busy: /dev/bpf255", which reads like a bug in the last device
+        rather than a description of the machine's state.
+        """
+        busy = reasons.get(errno.EBUSY, 0)
+        missing = reasons.get(errno.ENOENT, 0)
+        others = {code: count for code, count in reasons.items()
+                  if code not in (errno.EBUSY, errno.ENOENT)}
+
+        parts = ["no /dev/bpf device is free (%d busy, %d absent)." % (busy, missing)]
+        if busy:
+            parts.append(
+                "Every capture device on this machine is already claimed. macOS gives "
+                "each one to a single process, so something is holding them: a running "
+                "Wireshark or tcpdump, or a nettool capture that did not exit. Find the "
+                "holders with:\n"
+                "    sudo lsof /dev/bpf*\n"
+                "and quit whatever is listed, or reboot if nothing obvious owns them.")
+        elif missing:
+            parts.append(
+                "The devices do not exist at all, which usually means this is not macOS "
+                "or a BSD, or /dev is not mounted as expected.")
+        if others:
+            named = ", ".join("%s (%d)" % (errno.errorcode.get(code, code), count)
+                              for code, count in sorted(others.items()))
+            parts.append("Other refusals: %s." % named)
+        return " ".join(parts)
 
     def read(self, timeout=0.5):
         ready = select.select([self._fd], [], [], timeout)[0]

@@ -286,5 +286,58 @@ class TestPlatformSelection(unittest.TestCase):
             link.IS_LINUX, link.IS_DARWIN, _ = original
 
 
+
+class TestBpfExhaustion(unittest.TestCase):
+    """What the message says when no capture device can be had."""
+
+    def message(self, reasons):
+        from nettool.link import BpfSocket
+
+        return BpfSocket._exhausted_message(reasons)
+
+    def test_all_busy_names_the_cause_and_the_command(self):
+        # The old message reported only the last device's errno, which turned
+        # "every capture device is taken" into a stray "Resource busy: bpf255".
+        text = self.message({errno.EBUSY: 256})
+        self.assertIn("256 busy", text)
+        self.assertIn("lsof /dev/bpf", text)
+        self.assertNotIn("bpf255", text)
+
+    def test_absent_devices_are_a_different_story(self):
+        text = self.message({errno.ENOENT: 256})
+        self.assertIn("do not exist", text)
+        self.assertNotIn("lsof", text)
+
+    def test_other_refusals_are_named_not_swallowed(self):
+        text = self.message({errno.EBUSY: 2, errno.EIO: 3})
+        self.assertIn("EIO (3)", text)
+
+
+class TestCapturableCache(unittest.TestCase):
+    def test_the_probe_is_not_repeated_for_every_caller(self):
+        # Probing means claiming a real BPF device per interface, and `serve`
+        # asks on every handshake.
+        from nettool import link
+
+        link._capturable_cache.update({"at": 0.0, "names": None, "value": None})
+        probed = []
+        real = link._probe_capturable
+
+        def counting(names=None):
+            probed.append(names)
+            return ["eth0"]
+
+        link._probe_capturable = counting
+        try:
+            self.assertEqual(link.capturable_interfaces(), ["eth0"])
+            self.assertEqual(link.capturable_interfaces(), ["eth0"])
+            self.assertEqual(len(probed), 1)
+            # A caller that needs the truth right now can still have it.
+            link.capturable_interfaces(max_age=0)
+            self.assertEqual(len(probed), 2)
+        finally:
+            link._probe_capturable = real
+            link._capturable_cache.update({"at": 0.0, "names": None, "value": None})
+
 if __name__ == "__main__":
     unittest.main()
