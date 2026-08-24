@@ -3,17 +3,53 @@ import NettoolKit
 
 struct RootView: View {
     @EnvironmentObject private var store: AppStore
+    @State private var selection = Tab.captures
+    @State private var pairingResult: String?
+
+    enum Tab { case captures, wifi, tools, mac }
 
     var body: some View {
-        TabView {
+        TabView(selection: $selection) {
             CaptureTab()
                 .tabItem { Label("Captures", systemImage: "doc.text.magnifyingglass") }
+                .tag(Tab.captures)
             WiFiTab()
                 .tabItem { Label("Wi-Fi", systemImage: "wifi") }
+                .tag(Tab.wifi)
             ToolsTab()
                 .tabItem { Label("Tools", systemImage: "network") }
+                .tag(Tab.tools)
             MacTab()
                 .tabItem { Label("Mac", systemImage: "desktopcomputer") }
+                .tag(Tab.mac)
+        }
+        // The pairing line the Mac prints is a real link, so opening it -
+        // from AirDrop, a message, or Safari - pairs without anything being
+        // typed on a phone keyboard.
+        .onOpenURL { url in
+            Task { await handle(url) }
+        }
+        .alert("Pairing", isPresented: .constant(pairingResult != nil)) {
+            Button("OK") { pairingResult = nil }
+        } message: {
+            Text(pairingResult ?? "")
+        }
+    }
+
+    private func handle(_ url: URL) async {
+        guard let (peer, token) = MacLink.peer(fromPairingURL: url.absoluteString) else {
+            pairingResult = "That link is not a nettool pairing link."
+            return
+        }
+        selection = .mac
+        do {
+            // Prove it answers before storing anything, so a stale link fails
+            // here rather than on every screen afterwards.
+            let hello = try await store.macLink.hello(at: peer)
+            await store.pair(peer: peer, token: token)
+            pairingResult = "Paired with \(hello.host) (nettool \(hello.version))."
+        } catch {
+            pairingResult = "Could not reach \(peer.host): \(error.localizedDescription)"
         }
     }
 }

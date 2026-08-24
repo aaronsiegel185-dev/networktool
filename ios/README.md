@@ -111,16 +111,40 @@ throws the edit away. Change `project.yml` and regenerate.
 
 ## Pairing with a Mac
 
-On the Mac:
+On the Mac, from the repository:
 
 ```bash
 python3 -m nettool serve --lan
 ```
 
-It prints a pairing line - `nettool://192.168.1.10:8765/?token=...` - and
-advertises itself over Bonjour. In the app, the Mac tab lists what it finds;
-paste the line and it pairs. The token is kept in the keychain, not in
-preferences, because it is a bearer credential for a machine on your network.
+`--lan` matters: without it the server binds to localhost and no phone can
+reach it, which is the default because a diagnostics API that binds every
+interface by surprise is a gift to whoever else is on the coffee-shop Wi-Fi.
+
+It prints a pairing link:
+
+```
+nettool://192.168.1.10:8765/?token=xY3k...
+```
+
+The app registers the `nettool://` scheme, so **opening that link pairs the
+app** - nothing is typed on a phone keyboard. Any of these gets it there:
+
+* copy it on the Mac and paste on the phone, if Universal Clipboard is on
+  (both devices signed into the same Apple ID, Handoff enabled);
+* message or AirDrop it to yourself and tap it;
+* paste it into the box on the Mac tab by hand.
+
+Leave the server running while you use the app. Ctrl-C stops it.
+
+The token is kept in the keychain rather than in preferences, because it is a
+bearer credential for a machine on your network. Pairing survives relaunches;
+Unpair on the Mac tab forgets it.
+
+The Mac tab also lists servers found over Bonjour, which saves finding the
+address - but the token still has to come from the link, and the discovery row
+assumes the default port 8765. If you ran the server on another port, use the
+printed link rather than the discovered row.
 
 The server is deliberately narrow: bound to localhost unless `--lan` is passed,
 every endpoint needs the token, nothing changes state, and no client-supplied

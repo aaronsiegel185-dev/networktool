@@ -436,11 +436,28 @@ def serve(host="127.0.0.1", port=8765, token=None, capture_dir=None,
     port = httpd.server_address[1]
 
     reachable = _lan_address() if host not in ("127.0.0.1", "localhost") else host
-    out.write("nettool API on http://%s:%d/api/%s/\n" % (reachable, port, API_VERSION))
-    out.write("pairing token: %s\n" % token)
-    out.write("pair by hand with: nettool://%s:%d/?token=%s\n" % (reachable, port, token))
-    if host in ("127.0.0.1", "localhost"):
-        out.write("bound to localhost only - pass --lan to let a phone reach it\n")
+    link = "nettool://%s:%d/?token=%s" % (reachable, port, token)
+    local_only = host in ("127.0.0.1", "localhost")
+
+    out.write("nettool API on http://%s:%d/api/%s/\n\n" % (reachable, port, API_VERSION))
+    if local_only:
+        # Said before the link, or it is read, tried, and only then explained.
+        out.write("Bound to localhost, so no phone can reach it yet.\n"
+                  "Restart with --lan to let one:\n\n"
+                  "    nettool serve --lan\n\n")
+        # Still worth printing: this is the form for poking at the API by hand.
+        out.write("pairing token: %s\n" % token)
+        out.write("    %s\n" % link)
+    else:
+        out.write("To pair, get this link to the phone and open it - the app\n"
+                  "registers nettool:// so opening it pairs, with nothing typed:\n\n")
+        out.write("    %s\n\n" % link)
+        out.write("Any of these works:\n"
+                  "  * copy it here and paste on the phone (Universal Clipboard,\n"
+                  "    if both are signed into the same Apple ID)\n"
+                  "  * message or AirDrop it to yourself and tap it\n"
+                  "  * paste it into the Mac tab in the app by hand\n\n")
+        out.write("Leave this running while you use the app. Ctrl-C stops it.\n")
     out.flush()
 
     publisher = advertise(port) if announce and host not in ("127.0.0.1", "localhost") else None

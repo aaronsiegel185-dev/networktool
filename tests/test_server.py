@@ -150,15 +150,31 @@ class TestApi(unittest.TestCase):
 
 
 class TestPairingLink(unittest.TestCase):
-    def test_localhost_binding_is_the_default(self):
+    def test_localhost_binding_says_a_phone_cannot_reach_it(self):
         # A diagnostics API that binds every interface by surprise is a gift to
-        # whoever else is on the coffee shop wifi.
+        # whoever else is on the coffee shop wifi - so localhost is the default,
+        # and the output has to say why nothing can connect yet.
         out = io.StringIO()
         httpd = server.serve(host="127.0.0.1", port=0, token="x", announce=False,
                              sink=out)
         try:
-            self.assertIn("localhost only", out.getvalue())
-            self.assertIn("nettool://127.0.0.1", out.getvalue())
+            printed = out.getvalue()
+            self.assertIn("localhost", printed)
+            self.assertIn("--lan", printed)
+            self.assertIn("nettool://127.0.0.1", printed)
+        finally:
+            server.shutdown(httpd)
+
+    def test_lan_mode_leads_with_the_pairing_link(self):
+        out = io.StringIO()
+        httpd = server.serve(host="0.0.0.0", port=0, token="SAMPLE", announce=False,
+                             sink=out)
+        try:
+            printed = out.getvalue()
+            self.assertIn("To pair", printed)
+            self.assertIn("?token=SAMPLE", printed)
+            # The scheme is what makes the link openable rather than typed.
+            self.assertIn("nettool://", printed)
         finally:
             server.shutdown(httpd)
 
