@@ -1220,6 +1220,14 @@ def main(argv=None):
     except NetToolError as exc:
         sys.stderr.write("error: %s\n" % exc)
         return 2
+    except OSError as exc:
+        # Anything that got this far is about a file or a socket the user named,
+        # not a bug in the tool - and the GUI shows whatever lands on stderr, so
+        # an unhandled OSError becomes a traceback in a dialog box.
+        detail = getattr(exc, "filename", None)
+        sys.stderr.write("error: %s%s\n"
+                         % (exc.strerror or exc, ": %s" % detail if detail else ""))
+        return 2
     except KeyboardInterrupt:
         sys.stderr.write("\ninterrupted\n")
         return 130

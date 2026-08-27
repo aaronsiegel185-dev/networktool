@@ -9,6 +9,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from nettool import decode
 from nettool.pcap import PcapReader, PcapWriter
 from nettool.pfilter import compile_filter
+from nettool.util import NetToolError
+
+
+def run_cli(argv):
+    """(exit code, stdout, stderr) for a CLI invocation, without a subprocess."""
+    import io
+    from contextlib import redirect_stderr, redirect_stdout
+
+    from nettool.cli import main
+
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = main(argv)
+    return code, out.getvalue(), err.getvalue()
 
 
 def eth(dst, src, etype, payload):
@@ -148,6 +162,58 @@ class TestPcapRoundTrip(unittest.TestCase):
         self.assertEqual(len(data), 64)
         self.assertEqual(orig, len(frame))
 
+
+
+class TestBadCapturePaths(unittest.TestCase):
+    """A path someone typed is not a bug, and must not arrive as a traceback."""
+
+    def test_a_directory_says_so(self):
+        with self.assertRaises(NetToolError) as caught:
+            PcapReader("/")
+        self.assertIn("directory", str(caught.exception))
+
+    def test_a_missing_file_says_so(self):
+        with self.assertRaises(NetToolError) as caught:
+            PcapReader("/nonexistent/nowhere.pcap")
+        self.assertIn("no such capture file", str(caught.exception))
+
+    def test_a_file_that_is_not_a_capture_shows_what_it_found(self):
+        path = os.path.join(tempfile.mkdtemp(), "notes.txt")
+        with open(path, "wb") as fh:
+            fh.write(b"this is not a pcap file at all, but it is long enough")
+        with self.assertRaises(NetToolError) as caught:
+            PcapReader(path)
+        message = str(caught.exception)
+        self.assertIn("not a classic pcap", message)
+        self.assertIn("pcapng", message, "point at the likely cause")
+
+    def test_an_empty_file_is_not_a_crash(self):
+        path = os.path.join(tempfile.mkdtemp(), "empty.pcap")
+        open(path, "wb").close()
+        with self.assertRaises(NetToolError) as caught:
+            PcapReader(path)
+        self.assertIn("too short", str(caught.exception))
+
+    def test_a_rejected_file_is_closed_again(self):
+        # The constructor raises, so the caller never gets an object to close -
+        # a run of bad paths would otherwise leak a descriptor each.
+        import warnings
+
+        path = os.path.join(tempfile.mkdtemp(), "notes.txt")
+        with open(path, "wb") as fh:
+            fh.write(b"not a pcap file, but long enough to reach the magic check")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ResourceWarning)
+            for _ in range(3):
+                with self.assertRaises(NetToolError):
+                    PcapReader(path)
+
+    def test_the_cli_reports_it_without_a_traceback(self):
+        code, out, err = run_cli(["analyze", "/"])
+        self.assertEqual(code, 2)
+        self.assertIn("error:", err)
+        self.assertNotIn("Traceback", err)
+        self.assertNotIn("Traceback", out)
 
 if __name__ == "__main__":
     unittest.main()

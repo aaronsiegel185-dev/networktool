@@ -99,6 +99,9 @@ impl AnalyzeTab {
     }
 
     fn start(&mut self, settings: &Settings) {
+        if path_complaint(&self.path).is_some() {
+            return;
+        }
         if self.path.trim().is_empty() {
             self.error = Some("enter the path of a capture file".into());
             return;
@@ -197,6 +200,11 @@ impl AnalyzeTab {
                 self.start(settings);
             }
         });
+        // Said here rather than after a round trip to the CLI: the answer is
+        // already known, and an error box for an empty field reads like a fault.
+        if let Some(complaint) = path_complaint(&self.path) {
+            ui.colored_label(widgets::WARN, complaint);
+        }
 
         let Some(report) = self.report.clone() else {
             if self.job.is_none() {
@@ -626,4 +634,27 @@ fn throughput_view(ui: &mut egui::Ui, report: &AnalysisReport) {
         fmt_bytes((peak / 8.0) as u64),
         report.throughput.len()
     ));
+}
+
+/// What is obviously wrong with a capture path, before running anything.
+///
+/// Only the cases that need no filesystem access to judge - whether the file
+/// exists, and whether it is really a pcap, are the CLI's business, and it says
+/// so in the same words on every platform.
+fn path_complaint(path: &str) -> Option<String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Some("Enter the path of a .pcap file to analyse.".into());
+    }
+    if trimmed.ends_with('/') || trimmed == "~" {
+        return Some(format!("{trimmed} is a directory - name the capture file itself."));
+    }
+    if trimmed.ends_with(".pcapng") {
+        return Some(
+            "pcapng is not read here yet. In Wireshark, File > Save As and pick \
+             \"Wireshark/tcpdump/... - pcap\"."
+                .into(),
+        );
+    }
+    None
 }

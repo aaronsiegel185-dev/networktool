@@ -5,6 +5,8 @@ Files written here open directly in Wireshark, tshark, tcpdump or any pcap tool.
 
 import struct
 
+from .util import NetToolError
+
 MAGIC_USEC = 0xA1B2C3D4
 MAGIC_NSEC = 0xA1B23C4D
 
@@ -61,25 +63,60 @@ class PcapWriter(object):
         return False
 
 
+def _read_pcap_header(handle, path):
+    """The 24-byte file header, or a NetToolError saying why it is not one."""
+    header = handle.read(24)
+    if len(header) < 24:
+        raise NetToolError("%s is too short to be a pcap file (%d bytes)"
+                           % (path, len(header)))
+    magic = struct.unpack("<I", header[:4])[0]
+    if magic in (MAGIC_USEC, MAGIC_NSEC):
+        return header, "<", magic
+    swapped = struct.unpack(">I", header[:4])[0]
+    if swapped in (MAGIC_USEC, MAGIC_NSEC):
+        return header, ">", swapped
+    raise NetToolError(
+        "%s is not a classic pcap file - its first four bytes are %s. pcapng "
+        "captures (what Wireshark writes by default) are not read here yet; save "
+        "as \"Wireshark/tcpdump ... pcap\" instead."
+        % (path, " ".join("%02x" % byte for byte in header[:4])))
+
+
+def _open_capture(path):
+    """Open a capture file, or explain what is wrong with the path.
+
+    Every one of these arrives from something a person typed or picked, so none
+    of them is a bug worth a traceback - and a traceback is what an unhandled
+    OSError becomes by the time it reaches a GUI.
+    """
+    try:
+        return open(path, "rb")
+    except IsADirectoryError:
+        raise NetToolError("%s is a directory, not a capture file." % path)
+    except FileNotFoundError:
+        raise NetToolError("no such capture file: %s" % path)
+    except PermissionError:
+        raise NetToolError("no permission to read %s." % path)
+    except OSError as exc:
+        raise NetToolError("cannot read %s: %s" % (path, exc.strerror or exc))
+
+
 class PcapReader(object):
     """Iterate (timestamp, data, orig_len) tuples from a classic pcap file."""
 
     def __init__(self, path):
         self.path = path
-        self._fh = open(path, "rb")
-        header = self._fh.read(24)
-        if len(header) < 24:
-            raise ValueError("%s is too short to be a pcap file" % path)
-        magic = struct.unpack("<I", header[:4])[0]
-        if magic in (MAGIC_USEC, MAGIC_NSEC):
-            self.endian = "<"
-        elif struct.unpack(">I", header[:4])[0] in (MAGIC_USEC, MAGIC_NSEC):
-            self.endian = ">"
-            magic = struct.unpack(">I", header[:4])[0]
-        else:
-            raise ValueError("%s is not a classic pcap file (bad magic)" % path)
+        self._fh = _open_capture(path)
+        # Anything that rejects the file from here on has to close it first: a
+        # constructor that raises leaves no object for the caller to close, and
+        # a run of bad paths would then leak a descriptor each.
+        try:
+            magic = self._read_header()
+        except BaseException:
+            self._fh.close()
+            raise
         self.nano = magic == MAGIC_NSEC
-        fields = struct.unpack(self.endian + "HHiIII", header[4:])
+        fields = struct.unpack(self.endian + "HHiIII", self._header[4:])
         self.version = (fields[0], fields[1])
         self.snaplen = fields[4]
         self.linktype = fields[5]
@@ -98,6 +135,10 @@ class PcapReader(object):
 
     def close(self):
         self._fh.close()
+
+    def _read_header(self):
+        self._header, self.endian, magic = _read_pcap_header(self._fh, self.path)
+        return magic
 
     def __enter__(self):
         return self
