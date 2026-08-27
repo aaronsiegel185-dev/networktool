@@ -14,6 +14,7 @@ import urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from nettool import server
+from nettool.util import NetToolError
 
 
 def sample_pcap():
@@ -147,6 +148,59 @@ class TestApi(unittest.TestCase):
     def test_a_path_outside_the_api_is_not_served(self):
         status, body = self.get("../../etc/passwd", raw=True)
         self.assertIn(status, (400, 404))
+
+
+class TestTokenFile(unittest.TestCase):
+    """A service reads its token from disk; a command line is public."""
+
+    def setUp(self):
+        self.directory = tempfile.mkdtemp()
+        self.path = os.path.join(self.directory, "token")
+        with open(self.path, "w") as handle:
+            handle.write("a-real-token\n")
+        os.chmod(self.path, 0o600)
+
+    def test_reads_and_strips_it(self):
+        self.assertEqual(server.read_token(self.path), "a-real-token")
+
+    def test_refuses_a_file_other_users_can_read(self):
+        # ps shows every command line on the box, which is why the token is in a
+        # file - a file anyone can read gives that back.
+        os.chmod(self.path, 0o644)
+        with self.assertRaises(NetToolError) as caught:
+            server.read_token(self.path)
+        message = str(caught.exception)
+        self.assertIn("readable by other users", message)
+        self.assertIn("chmod 600", message)
+
+    def test_group_readable_is_refused_too(self):
+        os.chmod(self.path, 0o640)
+        with self.assertRaises(NetToolError):
+            server.read_token(self.path)
+
+    def test_an_empty_file_is_not_a_token(self):
+        open(self.path, "w").close()
+        os.chmod(self.path, 0o600)
+        with self.assertRaises(NetToolError) as caught:
+            server.read_token(self.path)
+        self.assertIn("empty", str(caught.exception))
+
+    def test_a_missing_file_says_which(self):
+        with self.assertRaises(NetToolError) as caught:
+            server.read_token(os.path.join(self.directory, "absent"))
+        self.assertIn("absent", str(caught.exception))
+
+    def test_the_environment_supplies_one_when_nothing_else_does(self):
+        out = io.StringIO()
+        os.environ["NETTOOL_TOKEN"] = "from-the-environment"
+        try:
+            httpd = server.serve(host="127.0.0.1", port=0, announce=False, sink=out)
+        finally:
+            os.environ.pop("NETTOOL_TOKEN", None)
+        try:
+            self.assertEqual(httpd.pairing_token, "from-the-environment")
+        finally:
+            server.shutdown(httpd)
 
 
 class TestPairingLink(unittest.TestCase):

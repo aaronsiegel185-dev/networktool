@@ -202,6 +202,21 @@ Two macOS-specific caveats worth knowing:
   `iw survey` has no macOS equivalent, so the interference verdict there is based on
   neighbour count, overlap, signal and SNR.
 
+## Raspberry Pi
+
+`pi/install.sh` sets a Pi up as a permanent probe: the CLI on PATH, and the API
+running as a service that survives reboots, so the Mac app and the iPhone app
+can both drive it from anywhere on the network.
+
+```bash
+sudo ./pi/install.sh
+```
+
+It runs as its own unprivileged user with only `CAP_NET_RAW` and `CAP_NET_ADMIN`
+granted by systemd, and reads its pairing token from a mode-600 file rather than
+a command line. See [pi/README.md](pi/README.md) - including what a Pi cannot do
+(monitor mode on the built-in radio).
+
 ## iPhone app
 
 `ios/` holds a SwiftUI app that reads captures, decodes them, and drives a Mac

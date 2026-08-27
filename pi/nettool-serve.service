@@ -1,0 +1,49 @@
+[Unit]
+Description=nettool network diagnostics API
+Documentation=https://github.com/aaronsiegel185-dev/networktool
+After=network-online.target
+Wants=network-online.target
+# A Pi often comes up before DHCP has finished, so the first start can fail;
+# these belong in [Unit], not [Service], whatever the name suggests.
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+[Service]
+Type=simple
+# Not root. Packet capture needs exactly two capabilities, and systemd can grant
+# those to an ordinary user - which is a great deal less than handing the whole
+# machine to a service that listens on the network.
+User=nettool
+Group=nettool
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+
+# The token is read from a file rather than passed as an argument, because a
+# command line is visible to every user on the box through ps.
+ExecStart=/usr/local/bin/nettool serve --lan --token-file /etc/nettool/token \
+          --directory /var/lib/nettool/captures
+WorkingDirectory=/var/lib/nettool
+
+Restart=on-failure
+RestartSec=5
+
+# Hardening. The service reads network state and writes capture files; it has no
+# business anywhere else on the filesystem.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=no
+ReadWritePaths=/var/lib/nettool
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

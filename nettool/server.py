@@ -422,13 +422,40 @@ def advertise(port, name=None):
     return None
 
 
+def read_token(path):
+    """A pairing token from a file, checking it is not world-readable.
+
+    A service reads its token from disk rather than taking it on the command
+    line, because a command line is visible to every user on the machine
+    through ps. That only helps if the file itself is not.
+    """
+    try:
+        with open(path, "r") as handle:
+            token = handle.read().strip()
+    except OSError as exc:
+        raise NetToolError("cannot read the token file %s: %s"
+                           % (path, exc.strerror or exc))
+    if not token:
+        raise NetToolError("the token file %s is empty" % path)
+    try:
+        mode = os.stat(path).st_mode
+    except OSError:
+        mode = 0
+    if mode & 0o077:
+        raise NetToolError(
+            "%s is readable by other users (mode %o). Anyone who can read it can "
+            "drive this server, so tighten it first:\n    chmod 600 %s"
+            % (path, mode & 0o777, path))
+    return token
+
+
 def serve(host="127.0.0.1", port=8765, token=None, capture_dir=None,
           announce=True, verbose=False, sink=None):
     """Run the API until interrupted. Returns the ThreadingHTTPServer."""
     import sys
 
     out = sink or sys.stdout
-    token = token or secrets.token_urlsafe(18)
+    token = token or os.environ.get("NETTOOL_TOKEN") or secrets.token_urlsafe(18)
     Handler.api = Api(token, capture_dir=capture_dir)
 
     httpd = ThreadingHTTPServer((host, port), Handler)

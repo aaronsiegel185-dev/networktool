@@ -901,7 +901,10 @@ def cmd_serve(args):
     from . import server as servermod
 
     host = "0.0.0.0" if args.lan else "127.0.0.1"
-    httpd = servermod.serve(host=host, port=args.port, token=args.token,
+    token = args.token
+    if args.token_file:
+        token = servermod.read_token(args.token_file)
+    httpd = servermod.serve(host=host, port=args.port, token=token,
                             capture_dir=args.directory, announce=not args.no_announce,
                             verbose=args.verbose)
     try:
@@ -1169,7 +1172,10 @@ def build_parser():
     p.add_argument("--lan", action="store_true",
                    help="listen on every interface so a phone can reach it "
                         "(default is localhost only)")
-    p.add_argument("--token", help="pairing token to use (one is generated otherwise)")
+    p.add_argument("--token", help="pairing token to use (one is generated otherwise; "
+                                   "$NETTOOL_TOKEN is used if set)")
+    p.add_argument("--token-file", help="read the pairing token from a file, so it is "
+                                        "not visible in ps like a command line is")
     p.add_argument("-d", "--directory", help="where captures are read and written "
                                              "(default: the current directory)")
     p.add_argument("--no-announce", action="store_true",
