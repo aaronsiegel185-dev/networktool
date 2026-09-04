@@ -162,10 +162,9 @@ fn main() -> eframe::Result<()> {
         "nettool",
         native_options,
         Box::new(move |cc| {
-            cc.egui_ctx.set_visuals(egui::Visuals::dark());
-            cc.egui_ctx.all_styles_mut(|style| {
-                style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-            });
+            // The saved skin, so a hacker-mode session comes back as one rather
+            // than flashing the ordinary theme for a frame first.
+            nettool_gui::ui::theme::apply(&cc.egui_ctx, nettool_gui::ui::theme::load_skin());
             Ok(Box::new(app::App::new(settings, startup.clone())))
         }),
     )

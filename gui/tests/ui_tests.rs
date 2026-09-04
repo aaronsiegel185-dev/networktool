@@ -82,3 +82,81 @@ fn every_tab_has_a_title() {
     }
     assert_eq!(Tab::default(), Tab::Overview);
 }
+
+#[test]
+fn the_skin_toggles_and_names_what_pressing_it_does() {
+    use nettool_gui::ui::theme::Skin;
+
+    assert_eq!(Skin::default(), Skin::Dark);
+    assert!(!Skin::Dark.is_hacker());
+    assert!(Skin::Hacker.is_hacker());
+    assert_eq!(Skin::Dark.toggled(), Skin::Hacker);
+    assert_eq!(Skin::Hacker.toggled(), Skin::Dark);
+    // The button says where it goes, not where it is.
+    assert_eq!(Skin::Dark.button_label(), "hacker mode");
+    assert_eq!(Skin::Hacker.button_label(), "normal mode");
+}
+
+#[test]
+fn strong_text_stays_legible_in_both_skins() {
+    use nettool_gui::ui::theme::Skin;
+
+    // egui takes ordinary text from widgets.noninteractive and *strong* text
+    // from widgets.active. A dark colour on the latter looks like a sensible
+    // choice for a pressed button and silently turns every heading in the app
+    // invisible, which is exactly what it did.
+    for skin in [Skin::Dark, Skin::Hacker] {
+        let visuals = skin.visuals();
+        let background = visuals.panel_fill;
+        for (name, colour) in [
+            ("body", visuals.widgets.noninteractive.fg_stroke.color),
+            ("strong", visuals.widgets.active.fg_stroke.color),
+        ] {
+            let contrast = luminance(colour) - luminance(background);
+            assert!(
+                contrast > 0.25,
+                "{name} text in {skin:?} is only {contrast:.2} brighter than the \
+                 background it sits on",
+            );
+        }
+    }
+}
+
+#[test]
+fn hacker_mode_is_green_on_black_and_nothing_else_changes_meaning() {
+    use nettool_gui::ui::theme::Skin;
+
+    let hacker = Skin::Hacker.visuals();
+    assert!(luminance(hacker.panel_fill) < 0.1, "the background is black");
+    assert!(is_greenish(Skin::Hacker.foreground()), "the text is green");
+
+    // Severity has to survive the theme: three colours that mean three things
+    // cannot all become green, or a critical finding reads as a passing one.
+    // What matters is that they stay apart and stay readable, not that they
+    // match any particular shade.
+    let warn = hacker.warn_fg_color;
+    let error = hacker.error_fg_color;
+    assert_ne!(warn, error, "warning and error must not be the same colour");
+    for (name, colour) in [("warn", warn), ("error", error)] {
+        assert!(
+            !is_greenish(colour),
+            "{name} is green enough to be mistaken for ordinary text",
+        );
+        assert!(
+            luminance(colour) - luminance(hacker.panel_fill) > 0.25,
+            "{name} is not readable on the background",
+        );
+    }
+}
+
+/// Whether a colour would read as the theme's phosphor rather than as a warning.
+fn is_greenish(colour: eframe::egui::Color32) -> bool {
+    let [r, g, b, _] = colour.to_array();
+    g as u16 > r as u16 + 40 && g as u16 > b as u16 + 40
+}
+
+/// Rough perceived brightness, 0 (black) to 1 (white).
+fn luminance(colour: eframe::egui::Color32) -> f32 {
+    let [r, g, b, _] = colour.to_array();
+    (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32) / 255.0
+}

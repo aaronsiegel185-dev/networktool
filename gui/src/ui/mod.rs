@@ -8,6 +8,7 @@ pub mod netmap;
 pub mod lldp;
 pub mod overview;
 pub mod scan;
+pub mod theme;
 pub mod widgets;
 pub mod wifi;
 

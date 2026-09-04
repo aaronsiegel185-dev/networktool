@@ -4,6 +4,7 @@ use eframe::egui;
 
 use crate::model::IfaceReport;
 use crate::runner::{args, Job, Settings};
+use crate::ui::theme;
 use crate::ui::widgets;
 use crate::ui::{
     analyze::AnalyzeTab, analyze::View as AnalyzeView, capture::CaptureTab,
@@ -42,6 +43,10 @@ pub struct App {
     analyze: AnalyzeTab,
     wifi: WifiTab,
     base_command: String,
+    /// Cosmetic only. Kept on the app rather than in egui's memory so it can be
+    /// written to disk and read back at the next launch.
+    skin: theme::Skin,
+    skin_applied: bool,
     /// Dev/documentation aid: capture the window to a PNG after a few frames.
     pub screenshot: Option<ScreenshotJob>,
 }
@@ -53,6 +58,13 @@ pub struct ScreenshotJob {
 }
 
 impl App {
+    /// Switch skins and remember the choice.
+    fn set_skin(&mut self, ctx: &egui::Context, skin: theme::Skin) {
+        self.skin = skin;
+        theme::apply(ctx, skin);
+        theme::save_skin(skin);
+    }
+
     pub fn new(settings: Settings, startup: Startup) -> Self {
         let base_command = settings.base.join(" ");
         let mut analyze = AnalyzeTab::default();
@@ -83,6 +95,8 @@ impl App {
             analyze,
             wifi,
             base_command,
+            skin: theme::load_skin(),
+            skin_applied: false,
             screenshot: startup.screenshot.map(|(path, delay)| ScreenshotJob {
                 path,
                 capture_at: std::time::Instant::now()
@@ -183,6 +197,14 @@ impl App {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("Settings").clicked() {
                         self.show_settings = !self.show_settings;
+                    }
+                    if ui
+                        .button(self.skin.button_label())
+                        .on_hover_text("Green phosphor on black. Changes how it looks, \
+                                        nothing about what it measures.")
+                        .clicked()
+                    {
+                        self.set_skin(ui.ctx(), self.skin.toggled());
                     }
                     if self.settings.use_sudo {
                         ui.colored_label(widgets::WARN, "sudo");
@@ -319,6 +341,12 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // The saved skin can only be applied once there is a context to apply it
+        // to, which is the first frame rather than construction.
+        if !self.skin_applied {
+            self.skin_applied = true;
+            theme::apply(ui.ctx(), self.skin);
+        }
         if self.tick() {
             ui.ctx().request_repaint();
         }

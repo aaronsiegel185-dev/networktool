@@ -547,6 +547,16 @@ open gui/target/macos/nettool.app      # then drag it to /Applications
 
 The bundle carries the CLI inside `Contents/Resources`, so the app is self-contained.
 
+### Hacker mode
+
+The button beside Settings switches the app to green phosphor on black, in
+monospace throughout. It is purely cosmetic - nothing it measures or reports
+changes - and the choice is remembered between launches.
+
+The severity colours stay as they are. Green, amber and red have to remain
+distinguishable from each other and from ordinary text, and a screen where
+everything is green is one where a critical finding reads like a passing one.
+
 ## Tests
 
 ```bash
