@@ -26,6 +26,8 @@ pub struct Startup {
     /// A capture file to preload into the analysis tab.
     pub open_file: Option<String>,
     pub analyze_view: Option<AnalyzeView>,
+    /// A notebook or client to open in Assist, as (is_client, id).
+    pub assist_open: Option<(bool, String)>,
 }
 
 pub struct App {
@@ -91,7 +93,13 @@ impl App {
             inventory_error: None,
             show_settings: false,
             status: "ready".to_string(),
-            assist: AssistTab::default(),
+            assist: {
+                let mut tab = AssistTab::default();
+                if let Some((is_client, id)) = startup.assist_open.as_ref() {
+                    tab.open_at(id, *is_client);
+                }
+                tab
+            },
             overview: OverviewTab::default(),
             discover: DiscoverTab::default(),
             scan: ScanTab::default(),

@@ -25,6 +25,7 @@ struct Options {
     screenshot_delay: f32,
     autorun: bool,
     section: Option<Section>,
+    assist_open: Option<(bool, String)>,
     nettool: Option<String>,
     assist: Option<String>,
     sudo: bool,
@@ -40,6 +41,7 @@ fn parse_options() -> Result<Options, String> {
         screenshot_delay: 3.0,
         autorun: false,
         section: None,
+        assist_open: None,
         nettool: None,
         assist: None,
         sudo: false,
@@ -52,6 +54,8 @@ fn parse_options() -> Result<Options, String> {
                     "toolbox-gui - the Toolbox desktop app: Network Tool and Assist\n\n\
                      Options:\n  \
                      --section <name>    open on a section: assist, network\n  \
+                     --notebook <id>     open this notebook in Assist\n  \
+                     --client <id>       open this client's standing context\n  \
                      --tab <name>        a Network Tool tab: overview, discover, scan, lldp, capture, mirror, analyze, wifi\n  \
                      --nettool <cmd>     how to run nettool (default: autodetect, e.g. \"python3 -m nettool\")\n  \
                      --assist <cmd>      how to run the Assist part (default: autodetect)\n  \
@@ -64,6 +68,16 @@ fn parse_options() -> Result<Options, String> {
                      --screenshot-delay <seconds>  how long to let results load first\n"
                 );
                 std::process::exit(0);
+            }
+            "--notebook" => {
+                let id = argv.next().ok_or("--notebook needs an id")?;
+                options.assist_open = Some((false, id));
+                options.section = Some(Section::Assist);
+            }
+            "--client" => {
+                let id = argv.next().ok_or("--client needs an id or name")?;
+                options.assist_open = Some((true, id));
+                options.section = Some(Section::Assist);
             }
             "--section" => {
                 let name = argv.next().ok_or("--section needs a name")?;
@@ -181,6 +195,7 @@ fn main() -> eframe::Result<()> {
             Section::Network
         }),
         tab: options.tab,
+        assist_open: options.assist_open.clone(),
         open_file: options.open_file.clone(),
         analyze_view: options.analyze_view,
         wifi_view: options.wifi_view,

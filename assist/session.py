@@ -16,7 +16,11 @@ You are the troubleshooting half of Toolbox, a network and systems tool. You run
 entirely on this person's own machine; nothing they tell you leaves it.
 
 You are given a notebook: a question, the sources the person added to it, and \
-what the machine reports about itself. Sources can be packet captures, logs, \
+what the machine reports about itself. A notebook filed under a client also \
+carries standing context about that client's setup - firewall addresses, server \
+names, how the sites are wired. That was written down ahead of time, not \
+measured today: use it to interpret what you are seeing, but never report it \
+back as a reading you took. Sources can be packet captures, logs, \
 config files, screenshots or frames from a screen recording. Captures and logs \
 have been rendered into text for you, by the same analyzer the person can run \
 themselves - so what you are reading is a real reading of their file, not a \
@@ -38,16 +42,23 @@ measurement that would settle it.
 """
 
 
-def source_blocks(notebook, budget=SOURCE_BUDGET):
-    """The enabled sources as text, newest first until the budget runs out.
+# A client's reference material must not crowd out the evidence for the ticket
+# in hand. It gets its own slice of the budget rather than competing for all of
+# it: an asset list is useful background, but never at the cost of the capture
+# someone just took.
+CLIENT_SOURCE_BUDGET = SOURCE_BUDGET // 3
+
+
+def _fit(holder, budget):
+    """Enabled text sources, newest first until the budget runs out.
 
     Newest first because the file someone just added is the one they are asking
     about. Anything that does not fit is named but not included, so the model
-    knows the notebook holds more than it was shown rather than assuming it has
-    seen everything.
+    knows there is more than it was shown rather than assuming it has seen
+    everything.
     """
     blocks, omitted, used = [], [], 0
-    for entry in reversed(notebook.enabled_sources()):
+    for entry in reversed(holder.enabled_sources()):
         text = entry.get("digest") or ""
         if not text:
             continue                      # images carry no text; they go as images
@@ -61,15 +72,48 @@ def source_blocks(notebook, budget=SOURCE_BUDGET):
     return blocks, omitted
 
 
+def source_blocks(notebook, budget=SOURCE_BUDGET):
+    """This notebook's own sources."""
+    return _fit(notebook, budget)
+
+
+def client_blocks(client, budget=CLIENT_SOURCE_BUDGET):
+    """A client's standing reference material."""
+    if client is None:
+        return [], []
+    return _fit(client, budget)
+
+
 def build_messages(notebook, system_prompt=SYSTEM_PROMPT, image_limit=6,
                    with_images=True):
     """The conversation as the model will see it, newest question last."""
     messages = [{"role": "system", "content": system_prompt}]
 
+    client = notebook.client()
     opening = ["NOTEBOOK: %s" % notebook.title]
+    if client:
+        opening.append("CLIENT: %s" % client.name)
     if notebook.record.get("body"):
         opening.append("")
         opening.append(notebook.record["body"])
+
+    # The client goes in before the evidence: it is the frame you read the
+    # evidence through, not another exhibit.
+    if client:
+        standing = client.standing_context()
+        if standing:
+            opening.append("")
+            opening.append(standing)
+        client_text, client_omitted = client_blocks(client)
+        for block in client_text:
+            opening.append("")
+            opening.append("=" * 60)
+            opening.append("STANDING REFERENCE, kept on file for %s:" % client.name)
+            opening.append(block)
+        if client_omitted:
+            opening.append("")
+            opening.append("Also on file for this client, not shown here: %s."
+                           % ", ".join(client_omitted))
 
     summary = contextmod.summarise(notebook.record.get("context") or {})
     if summary:
@@ -97,8 +141,14 @@ def build_messages(notebook, system_prompt=SYSTEM_PROMPT, image_limit=6,
 
     # Images ride on the first user turn, where the notebook is described. A
     # local vision model handles a handful well and degrades quickly beyond
-    # that, so the newest few are kept rather than everything ever added.
-    images = notebook.image_paths(limit=image_limit) if with_images else []
+    # that, so the newest few are kept rather than everything ever added. A
+    # client's images come first, so the ticket's own always survive the cap.
+    images = []
+    if with_images:
+        if client:
+            images.extend(client.image_paths(limit=max(1, image_limit // 3)))
+        images.extend(notebook.image_paths(limit=image_limit))
+        images = images[-image_limit:]
     if enabled and not with_images and notebook.has_images():
         # Sending images to a text model gets them ignored at best and an error
         # at worst. Say so instead, so the answer does not pretend to have
@@ -125,7 +175,9 @@ def pick_model(notebook, settings):
     far - so an empty setting means text only rather than a broken request.
     """
     vision = settings.get("vision_model") or ""
-    if notebook.has_images() and vision:
+    client = notebook.client()
+    has_images = notebook.has_images() or (client is not None and client.has_images())
+    if has_images and vision:
         return vision, True
     return settings.get("text_model") or config.DEFAULT_TEXT_MODEL, False
 

@@ -4,7 +4,9 @@ Two tools that know about each other, both running entirely on your own machine.
 
 **Network Tool** measures the network. **Assist** is a local AI you hand files
 to - packet captures, logs, configs, screenshots, screen recordings - and then
-ask about them, with Network Tool's own measurements alongside.
+ask about them, with Network Tool's own measurements alongside. Notebooks are
+filed under the client they are for, so what you know about their setup is
+written down once and reaches every question you ever ask about them.
 
 > **Nothing you give Assist leaves this computer.** Not the files, not the
 > question, not what your machine reports about itself. The model runs on
@@ -14,7 +16,8 @@ ask about them, with Network Tool's own measurements alongside.
 > [Assist](#assist).
 
 ```bash
-toolbox assist new "Wi-Fi drops every afternoon"   # start a notebook
+toolbox assist client new "Acme Corp" --fact firewall=203.0.113.1
+toolbox assist new "VPN flapping" --client acme    # start a notebook for them
 toolbox assist add <notebook> span.pcap wifi.log   # give it the evidence
 toolbox net wifi --analyze                         # measure the network
 ```
@@ -65,6 +68,44 @@ also carries what Network Tool's probes report about this machine - interfaces,
 addressing, routes, DNS, the Wi-Fi scan with its interference breakdown, the
 health check - so the model is reasoning about your actual machine rather than
 about networks in general.
+
+### Clients
+
+A ticket is about one afternoon. A client is about the infrastructure that was
+there before it and will be there after - the firewall addresses, the core
+switch names, the ISP, the fact that site B is on a different subnet than
+everyone assumes. Write it down once:
+
+```bash
+toolbox assist client new "Acme Corp" --notes "Two sites, joined by IPsec."
+toolbox assist client set acme --fact firewall=203.0.113.1 \
+                               --fact firewall=203.0.113.2 \
+                               --fact ISP="Northline Telecom"
+toolbox assist client add acme acme-fw.conf        # reference material
+```
+
+A label holds as many values as you need, because most of what you write down
+is plural - two firewalls, six servers, three sites.
+
+![A client's standing context](gui/docs/assist-client.png)
+
+Every notebook filed under that client carries it. It goes into the prompt
+ahead of the evidence, marked as standing context rather than as a reading, so
+the model uses it to interpret what it is seeing without ever reporting a
+firewall address back as something it measured today. A client can also keep
+reference files - a network diagram, a firewall export, an asset list - which
+work exactly like a notebook's sources and get their own slice of the budget,
+so background can never crowd out the capture you just took.
+
+```bash
+toolbox assist list                      # grouped by client
+toolbox assist list --client acme        # just theirs
+toolbox assist file <notebook> acme      # move one in
+toolbox assist client show acme          # facts, notes, files, notebooks
+```
+
+Deleting a client keeps its notebooks and simply unfiles them: a year of
+someone's tickets should never go with the client record.
 
 ### Sources
 
@@ -152,7 +193,7 @@ toolbox assist config --set endpoint=http://127.0.0.1:1234/v1
 ```
 toolbox/     the front door: `toolbox net ...` and `toolbox assist ...`
 nettool/     Network Tool
-assist/      Assist: notebooks, sources, the model client and the egress guard
+assist/      Assist: clients, notebooks, sources, the model client, the egress guard
 gui/         the desktop app (Rust + egui), driving both
 ios/         the iPhone/iPad app
 pi/          installing Network Tool on a Raspberry Pi as a permanent probe
@@ -673,8 +714,11 @@ cd gui && cargo run --release
 ```
 
 One window, two sections, chosen at the top left. It opens on **Assist**:
-notebooks down the left, the conversation in the middle, and the sources on the
-right with a switch each. Files dropped anywhere on it become sources.
+notebooks down the left grouped under the client they are for, the conversation
+in the middle, and the sources on the right with a switch each - including a
+note of what the client contributes. Files dropped anywhere on it become
+sources. Clicking a client opens their standing context, where facts, notes and
+reference files are edited in place.
 
 **Network Tool** is the other section, and has the instrument tabs: health check, host discovery, port scanning, LLDP/CDP
 neighbour cards, live capture with pcap export, mirror/VLAN capture, the
@@ -692,7 +736,9 @@ privacy guarantee rather than two, and means the terminal and the app cannot
 disagree about where data went.
 
 ```bash
-nettool-gui --open span.pcap     # open a capture straight into the analysis tab
+nettool-gui --open span.pcap          # a capture, straight into the analysis tab
+nettool-gui --notebook <id>           # straight to a notebook
+nettool-gui --client acme             # straight to a client's standing context
 ```
 
 **A double-clickable macOS app:**
@@ -717,7 +763,7 @@ everything is green is one where a critical finding reads like a passing one.
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -v     # CLI: 352 tests
+python3 -m unittest discover -s tests -v     # CLI: 380 tests
 cd gui && cargo test                         # app: 78 tests
 ```
 

@@ -1256,6 +1256,51 @@ pub struct NotebookList {
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
+pub struct ClientList {
+    #[serde(default)]
+    pub clients: Vec<ClientSummary>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct ClientSummary {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub facts: i64,
+    #[serde(default)]
+    pub sources: i64,
+    #[serde(default)]
+    pub notebooks: i64,
+}
+
+/// A client: who a notebook is for, and what is permanently true about their
+/// setup. The facts arrive grouped, because one label holds several values -
+/// two firewalls, six servers.
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct Client {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub notes: String,
+    #[serde(default)]
+    pub grouped_facts: Vec<FactGroup>,
+    #[serde(default)]
+    pub sources: Vec<Source>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct FactGroup {
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub values: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
 pub struct NotebookSummary {
     #[serde(default)]
     pub id: String,
@@ -1272,6 +1317,11 @@ pub struct NotebookSummary {
     /// How many of those sources are switched on.
     #[serde(default)]
     pub sources_on: i64,
+    /// The client's id, or empty when the notebook is unfiled.
+    #[serde(default)]
+    pub client: String,
+    #[serde(default)]
+    pub client_name: String,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -1290,6 +1340,10 @@ pub struct Notebook {
     pub messages: Vec<NotebookMessage>,
     #[serde(default)]
     pub sources: Vec<Source>,
+    /// The client this notebook is filed under, expanded by the CLI so the app
+    /// does not have to go and look it up.
+    #[serde(default)]
+    pub client_detail: Option<Client>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
