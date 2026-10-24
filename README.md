@@ -1,8 +1,30 @@
-# nettool
+# Toolbox
 
-A single-file-install, dependency-free network diagnostics CLI for Linux, macOS and
-Windows, with a desktop GUI. It answers the questions you actually have when a
-network is misbehaving:
+Two tools that know about each other, both running entirely on your own machine.
+
+**Network Tool** measures the network. **Assist** is a local AI that takes a
+ticket - with screenshots, screen recordings and Network Tool's own measurements
+attached - and helps you work out what is wrong.
+
+> **Nothing you give Assist leaves this computer.** Not the ticket, not the
+> screenshots, not what your machine reports about itself. The model runs on
+> your hardware, and the code enforces it rather than promising it: every
+> exchange runs inside a guard that replaces the socket class, so a connection
+> to anywhere but your own model server raises instead of succeeding. See
+> [Assist](#assist).
+
+```bash
+toolbox assist new "Wi-Fi drops every afternoon" --ask   # describe a problem
+toolbox net wifi --analyze                               # measure the network
+```
+
+Either part also runs on its own, as `nettool ...` and `assist ...`, and both
+sit behind one tabbed [desktop app](#the-desktop-app).
+
+## Network Tool
+
+A dependency-free network diagnostics CLI for Linux, macOS and Windows. It
+answers the questions you actually have when a network is misbehaving:
 
 * **What is on this LAN?** ARP/ICMP/TCP host discovery with MAC vendor lookup.
 * **What is this host running?** Threaded TCP connect scan and UDP probe scan with banner grabbing.
@@ -16,23 +38,111 @@ network is misbehaving:
   gateway, DNS, internet reachability, path MTU and Wi-Fi in one pass.
 
 Everything is Python 3.8+ standard library. No pip dependencies, no libpcap, no scapy.
-Runs on **Linux and macOS** - the platform-specific layer is isolated, so the protocol
-work (pcap, LLDP/CDP, filters, interference scoring) is shared.
+The platform-specific layer is isolated, so the protocol work (pcap, LLDP/CDP, filters,
+interference scoring) is shared across all three platforms.
 
-There is also a **desktop GUI** in [`gui/`](gui/README.md) (Rust + egui) that drives this
-same CLI and renders the results - signal bars, channel congestion charts, live packet
-view and switch-neighbour cards.
+Full command reference: [Network Tool commands](#network-tool-commands).
 
-![nettool GUI](gui/docs/wifi-map.png)
+## Assist
+
+A ticket, the machine's own measurements, and a model running on your hardware.
+
+![Assist](gui/docs/assist.png)
+
+```bash
+./setup-assist.sh                          # install Ollama and pull the models
+
+toolbox assist new "Wi-Fi drops every afternoon" \
+    -b "Starts around 2pm, clears by 6. Wired is fine." --ask
+toolbox assist attach <ticket> ~/Desktop/screenshot.png
+toolbox assist ask <ticket> "what should I check first?"
+```
+
+Opening a ticket runs Network Tool's probes and attaches what they say - interfaces,
+addressing, routes, DNS, the Wi-Fi scan with its interference breakdown, and the
+health check - so the model is reasoning about your actual machine rather than
+about networks in general.
+
+### Nothing leaves the machine
+
+This is enforced, not promised:
+
+* **The endpoint must be local.** Every address the model endpoint resolves to is
+  checked, not just the first, so a hostname that resolves to both loopback and a
+  public address is refused.
+* **The socket class is replaced for the duration of the exchange.** Anything that
+  tries to connect anywhere but the model server raises `EgressBlocked`. That
+  covers code that never asked permission, including anything added later.
+* **`toolbox assist doctor`** prints where the model runs, what it resolves to, and
+  `data leaves this machine: NO` - before you have typed a ticket.
+
+A model server on your LAN rather than this machine is allowed with
+`--set allow_lan=true`, and then the doctor says so plainly instead of claiming
+nothing leaves.
+
+### Screenshots and video
+
+Drop a screenshot on the Assist tab, or `attach` it. Images are scaled to 1600px
+before they reach the model; nothing else is done to them, and the original is
+left where it is.
+
+A screen recording is sampled into frames spread across its length, and *both*
+the frames and the original are kept, so the evidence is not quietly replaced by
+an interpretation of it. Video needs `ffmpeg` on PATH; screenshots do not.
+
+### Models
+
+`./setup-assist.sh` picks a pair from how much memory the machine has, and says
+what it picked and why:
+
+| Memory | Text | Vision (screenshots) |
+| --- | --- | --- |
+| under 16 GB | `llama3.2:3b` (~2 GB) | `llama3.2-vision:11b` (~8 GB) |
+| 16-32 GB | `llama3.1:8b` (~5 GB) | `llama3.2-vision:11b` (~8 GB) |
+| 32 GB and up | `llama3.1:70b` (~40 GB) | `llama3.2-vision:90b` (~55 GB) |
+
+`--small`, `--large` and `--text-only` override the choice. With `--text-only`
+there is no vision model at all: screenshots can still be attached, and Assist
+says it cannot see them rather than guessing at their contents.
+
+Ollama is the default because it is the least work to install, but the client
+speaks the OpenAI chat-completions API, so LM Studio, llama.cpp's server and
+vLLM all work:
+
+```bash
+toolbox assist config --set endpoint=http://127.0.0.1:1234/v1
+```
+
+## Layout
+
+```
+toolbox/     the front door: `toolbox net ...` and `toolbox assist ...`
+nettool/     Network Tool
+assist/      Assist
+gui/         the desktop app (Rust + egui), driving both
+ios/         the iPhone/iPad app
+pi/          installing Network Tool on a Raspberry Pi as a permanent probe
+```
+
+`nettool/` deliberately stays at the top level rather than moving under a
+`parts/` directory. The macOS bundle looks for it in `Contents/Resources`, the
+Windows installer puts it beside the executable, the Pi service and the iOS
+pairing flow both invoke it by that path, and the app's own CLI detection walks
+for it. Moving it would break all five to make the directory listing match the
+naming, which is a poor trade - the suite is the two parts plus a front door,
+and that is true wherever the files sit.
 
 ## Install
 
 ```bash
-git clone <this repo> && cd network-tool
-python3 -m nettool --help          # run straight from the checkout
+git clone <this repo> && cd networktool
+python3 -m toolbox --help          # run straight from the checkout
 
-pip install .                      # or install the `nettool` command
+pip install .                      # or install `toolbox`, `nettool` and `assist`
 ```
+
+Network Tool needs nothing further - it is Python standard library only. Assist
+needs a model server, which `./setup-assist.sh` sets up (see [Assist](#assist)).
 
 On macOS the system Python that ships with the Xcode command line tools is enough
 (`xcode-select --install` if you have not run it before).
@@ -233,7 +343,7 @@ The server is read-only, needs a token on every request, binds to localhost
 unless `--lan` is passed, and lets no client-supplied string reach a shell or
 escape the capture directory.
 
-## Commands
+## Network Tool commands
 
 ### Inventory
 
@@ -522,17 +632,26 @@ Then `sudo nettool wifi analyze` for the channel picture.
 **"I need evidence for someone else"** — `sudo nettool capture -d 60 -w evidence.pcap -f "host X"`
 and hand over the pcap.
 
-## GUI
+## The desktop app
 
 ```bash
 cd gui && cargo run --release
 ```
 
-A tabbed desktop app over the same commands: health check, host discovery, port scanning,
-LLDP/CDP neighbour cards, live capture with pcap export, mirror/VLAN capture, the
-Wireshark-style capture analysis (conversations, protocol hierarchy, TCP health, Follow
-Stream) and the Wi-Fi analysis with per-channel congestion charts and a live signal
-monitor. See [gui/README.md](gui/README.md).
+One window over both parts. It opens on **Assist**: the ticket list, the privacy
+banner saying where the model runs, the conversation, and a drop target for
+screenshots and recordings anywhere on the tab.
+
+The rest are Network Tool: health check, host discovery, port scanning, LLDP/CDP
+neighbour cards, live capture with pcap export, mirror/VLAN capture, the
+Wireshark-style capture analysis (conversations, protocol hierarchy, TCP health,
+Follow Stream) and the Wi-Fi analysis with per-channel congestion charts and a
+live signal monitor. See [gui/README.md](gui/README.md).
+
+Like every other tab, Assist runs the CLI and renders what comes back - the model
+is never spoken to from the app. That keeps one implementation of the privacy
+guarantee rather than two, and means the terminal and the app cannot disagree
+about where data went.
 
 ```bash
 nettool-gui --open span.pcap     # open a capture straight into the analysis tab
@@ -560,18 +679,28 @@ everything is green is one where a critical finding reads like a passing one.
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -v     # CLI: 187 tests
-cd gui && cargo test                         # GUI: 47 tests
+python3 -m unittest discover -s tests -v     # CLI: 328 tests
+cd gui && cargo test                         # app: 77 tests
 ```
 
 The suite covers the packet decoder, pcap reader/writer round-trips, the filter language,
 LLDP/CDP TLV parsing (including PoE, VLAN, MED policies), `iw` scan/link/station/survey
 parsing, the Wi-Fi interference analysis, target/port expansion and the CLI commands.
 
+Assist is tested against a stub server speaking the OpenAI chat-completions API,
+so the shape of what would be sent - and in particular that images arrive as
+inline data URLs rather than paths - is checked on every run rather than only
+when someone has several gigabytes of weights pulled. The egress guard is tested
+by trying to reach a real public address through it and requiring the failure.
+
 ## Scope and limitations
 
-* Linux and macOS. Windows is not supported: capture would need Npcap and the whole
-  inventory layer would need rewriting.
+* Linux, macOS and Windows. Windows capture needs [Npcap](https://npcap.com) installed
+  with *WinPcap API-compatible mode*; everything else works without it.
+* Assist needs a model server on the machine, and a model worth running needs memory.
+  On a laptop with 8 GB the small text model is usable and the vision model is slow.
+  Local models are also plainly weaker than hosted ones - that is the trade for the
+  guarantee that nothing leaves, and it is the right trade here, but it is a trade.
 * The macOS back end is written against the documented BSD interfaces and its parsers are
   covered by tests, but it has had less time on real hardware than the Linux one - report
   anything that misreads.

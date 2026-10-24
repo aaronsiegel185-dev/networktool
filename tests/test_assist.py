@@ -293,3 +293,51 @@ class TestContext(AssistCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTextOnlySetup(AssistCase):
+    """A machine with no vision model must still work, and say what it cannot see."""
+
+    def test_no_vision_model_falls_back_to_text(self):
+        settings = dict(config.DEFAULTS, vision_model="")
+        ticket = tickets.create("With a screenshot")
+        ticket.add_attachment(png(os.path.join(self.work, "shot.png")),
+                              kind="screenshot")
+        model, used_vision = session.pick_model(ticket, settings)
+        self.assertFalse(used_vision)
+        self.assertEqual(model, settings["text_model"])
+
+    def test_images_are_not_sent_to_a_text_model(self):
+        ticket = tickets.create("With a screenshot")
+        ticket.add_attachment(png(os.path.join(self.work, "shot.png")),
+                              kind="screenshot")
+        messages = session.build_messages(ticket, with_images=False)
+        blob = json.dumps(messages)
+        self.assertNotIn("data:image", blob)
+        self.assertIn("cannot see the attached images", blob)
+
+    def test_the_whole_ask_works_without_a_vision_model(self):
+        with StubModelServer() as stub:
+            settings = dict(config.DEFAULTS, endpoint=stub.endpoint,
+                            vision_model="")
+            ticket = tickets.create("Screenshot, no vision model")
+            ticket.add_attachment(png(os.path.join(self.work, "shot.png")),
+                                  kind="screenshot")
+            result = session.ask(ticket, "what is wrong?", settings=settings,
+                                 stream=False)
+            self.assertFalse(result["vision"])
+            self.assertEqual(result["model"], config.DEFAULTS["text_model"])
+            # The request that actually went out carried no image data.
+            sent = json.dumps(stub.requests[-1])
+            self.assertNotIn("data:image", sent)
+
+    def test_a_vision_model_still_gets_the_image(self):
+        with StubModelServer() as stub:
+            settings = dict(config.DEFAULTS, endpoint=stub.endpoint)
+            ticket = tickets.create("Screenshot, with vision model")
+            ticket.add_attachment(png(os.path.join(self.work, "shot.png")),
+                                  kind="screenshot")
+            result = session.ask(ticket, "what is wrong?", settings=settings,
+                                 stream=False)
+            self.assertTrue(result["vision"])
+            self.assertIn("data:image", json.dumps(stub.requests[-1]))

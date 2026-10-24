@@ -188,7 +188,7 @@ impl App {
         egui::Panel::top("tabs").show(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("nettool").strong().size(17.0));
+                ui.label(egui::RichText::new("Toolbox").strong().size(17.0));
                 ui.add_space(10.0);
                 for tab in Tab::ALL {
                     if ui

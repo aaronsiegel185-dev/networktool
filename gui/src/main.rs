@@ -1,4 +1,4 @@
-//! nettool-gui - a desktop front end for the nettool network diagnostics CLI.
+//! The Toolbox desktop app: Network Tool and Assist behind one window.
 //!
 //! The GUI never re-implements the diagnostics: it runs `nettool ... --json` on worker
 //! threads and renders the results, so both interfaces always agree.
@@ -46,9 +46,9 @@ fn parse_options() -> Result<Options, String> {
         match arg.as_str() {
             "--help" | "-h" => {
                 println!(
-                    "nettool-gui - desktop GUI for nettool\n\n\
+                    "toolbox-gui - the Toolbox desktop app: Network Tool and Assist\n\n\
                      Options:\n  \
-                     --tab <name>        open on a tab: overview, discover, scan, lldp, capture, mirror, analyze, wifi\n  \
+                     --tab <name>        open on a tab: assist, overview, discover, scan, lldp, capture, mirror, analyze, wifi\n  \
                      --nettool <cmd>     how to run nettool (default: autodetect, e.g. \"python3 -m nettool\")\n  \
                      --assist <cmd>      how to run the Assist part (default: autodetect)\n  \
                      --sudo              run nettool through `sudo -n`\n  \
@@ -157,7 +157,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1180.0, 780.0])
             .with_min_inner_size([900.0, 560.0])
-            .with_title("nettool"),
+            .with_title("Toolbox"),
         ..Default::default()
     };
 
@@ -173,6 +173,8 @@ fn main() -> eframe::Result<()> {
             .map(|path| (path, options.screenshot_delay)),
     };
     eframe::run_native(
+        // The storage key, not the window title: changing it would throw away
+        // everyone's saved window size and skin for a cosmetic rename.
         "nettool",
         native_options,
         Box::new(move |cc| {

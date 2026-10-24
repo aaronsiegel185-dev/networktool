@@ -27,7 +27,8 @@ measurement that would settle it.
 """
 
 
-def build_messages(ticket, system_prompt=SYSTEM_PROMPT, image_limit=6):
+def build_messages(ticket, system_prompt=SYSTEM_PROMPT, image_limit=6,
+                   with_images=True):
     """The conversation as the model will see it, newest question last."""
     messages = [{"role": "system", "content": system_prompt}]
 
@@ -50,7 +51,14 @@ def build_messages(ticket, system_prompt=SYSTEM_PROMPT, image_limit=6):
     # Images ride on the first user turn, where the ticket is described. A local
     # vision model handles a handful well and degrades quickly beyond that, so
     # the newest few are kept rather than everything ever attached.
-    images = ticket.image_paths(limit=image_limit)
+    images = ticket.image_paths(limit=image_limit) if with_images else []
+    if attachments and not with_images and ticket.has_images():
+        # Sending images to a text model gets them ignored at best and an error
+        # at worst. Say so instead, so the answer does not pretend to have
+        # looked at a screenshot it never saw.
+        opening.append("You cannot see the attached images: no vision model is "
+                       "set up. Say so rather than guessing at their contents, "
+                       "and ask for what they show in words.")
     messages.append(llm.message("user", "\n".join(opening), images=images))
 
     for entry in ticket.messages:
@@ -62,10 +70,15 @@ def build_messages(ticket, system_prompt=SYSTEM_PROMPT, image_limit=6):
 
 
 def pick_model(ticket, settings):
-    """Vision only when there is something to look at."""
-    if ticket.has_images():
-        return settings.get("vision_model", config.DEFAULT_VISION_MODEL), True
-    return settings.get("text_model", config.DEFAULT_TEXT_MODEL), False
+    """Vision only when there is something to look at, and something to look with.
+
+    A vision model can be deliberately absent - it is the larger download by
+    far - so an empty setting means text only rather than a broken request.
+    """
+    vision = settings.get("vision_model") or ""
+    if ticket.has_images() and vision:
+        return vision, True
+    return settings.get("text_model") or config.DEFAULT_TEXT_MODEL, False
 
 
 def ask(ticket, question=None, settings=None, on_token=None, stream=True):
@@ -79,7 +92,7 @@ def ask(ticket, question=None, settings=None, on_token=None, stream=True):
         ticket.add_message("user", question)
 
     model, used_vision = pick_model(ticket, settings)
-    messages = build_messages(ticket)
+    messages = build_messages(ticket, with_images=used_vision)
     endpoint = settings["endpoint"]
     host = urlparse(endpoint).hostname or "127.0.0.1"
 

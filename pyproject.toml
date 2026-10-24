@@ -3,16 +3,21 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nettool"
+name = "toolbox"
 version = "0.1.0"
-description = "Field network diagnostics: LAN discovery, port scanning, LLDP/CDP neighbors, packet capture export, and Wi-Fi signal/interference analysis"
+description = "Network Tool and Assist: field network diagnostics, and a local model that works a ticket with them - with nothing leaving the machine"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 dependencies = []
 
 [project.scripts]
+toolbox = "toolbox.cli:main"
+# Both parts keep their own command. The macOS bundle, the Windows installer and
+# the Pi service all invoke `nettool` directly, and Assist is just as usable on
+# its own as through the front door.
 nettool = "nettool.cli:main"
+assist = "assist.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["nettool*"]
+include = ["toolbox*", "nettool*", "assist*"]

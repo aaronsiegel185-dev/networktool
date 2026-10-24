@@ -15,7 +15,7 @@ toolbox %s - network diagnostics, and a local AI to make sense of them
   toolbox net <command>       %s
   toolbox assist <command>    %s
 
-Either part also runs on its own as `nettool ...` or `python3 -m assist ...`.
+Either part also runs on its own, as `nettool ...` and `assist ...`.
 Try `toolbox net --help` or `toolbox assist --help`.
 """ % (__version__, PARTS["net"][0], PARTS["assist"][0])
 
