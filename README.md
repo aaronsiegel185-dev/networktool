@@ -2,24 +2,25 @@
 
 Two tools that know about each other, both running entirely on your own machine.
 
-**Network Tool** measures the network. **Assist** is a local AI that takes a
-ticket - with screenshots, screen recordings and Network Tool's own measurements
-attached - and helps you work out what is wrong.
+**Network Tool** measures the network. **Assist** is a local AI you hand files
+to - packet captures, logs, configs, screenshots, screen recordings - and then
+ask about them, with Network Tool's own measurements alongside.
 
-> **Nothing you give Assist leaves this computer.** Not the ticket, not the
-> screenshots, not what your machine reports about itself. The model runs on
+> **Nothing you give Assist leaves this computer.** Not the files, not the
+> question, not what your machine reports about itself. The model runs on
 > your hardware, and the code enforces it rather than promising it: every
 > exchange runs inside a guard that replaces the socket class, so a connection
 > to anywhere but your own model server raises instead of succeeding. See
 > [Assist](#assist).
 
 ```bash
-toolbox assist new "Wi-Fi drops every afternoon" --ask   # describe a problem
-toolbox net wifi --analyze                               # measure the network
+toolbox assist new "Wi-Fi drops every afternoon"   # start a notebook
+toolbox assist add <notebook> span.pcap wifi.log   # give it the evidence
+toolbox net wifi --analyze                         # measure the network
 ```
 
 Either part also runs on its own, as `nettool ...` and `assist ...`, and both
-sit behind one tabbed [desktop app](#the-desktop-app).
+sit behind one [desktop app](#the-desktop-app) as two separate sections.
 
 ## Network Tool
 
@@ -45,7 +46,8 @@ Full command reference: [Network Tool commands](#network-tool-commands).
 
 ## Assist
 
-A ticket, the machine's own measurements, and a model running on your hardware.
+A notebook, the files it is grounded in, and a model running on your hardware.
+It is its own section of the app, not a tab among the network instruments.
 
 ![Assist](gui/docs/assist.png)
 
@@ -53,15 +55,49 @@ A ticket, the machine's own measurements, and a model running on your hardware.
 ./setup-assist.sh                          # install Ollama and pull the models
 
 toolbox assist new "Wi-Fi drops every afternoon" \
-    -b "Starts around 2pm, clears by 6. Wired is fine." --ask
-toolbox assist attach <ticket> ~/Desktop/screenshot.png
-toolbox assist ask <ticket> "what should I check first?"
+    -b "Starts around 2pm, clears by 6. Wired is fine."
+toolbox assist add <notebook> span.pcap wpa_supplicant.log router.conf shot.png
+toolbox assist ask <notebook> "what should I check first?"
 ```
 
-Opening a ticket runs Network Tool's probes and attaches what they say - interfaces,
-addressing, routes, DNS, the Wi-Fi scan with its interference breakdown, and the
+Start a notebook, add the files that bear on the question, and ask. A notebook
+also carries what Network Tool's probes report about this machine - interfaces,
+addressing, routes, DNS, the Wi-Fi scan with its interference breakdown, the
 health check - so the model is reasoning about your actual machine rather than
 about networks in general.
+
+### Sources
+
+A model cannot read a pcap, a 90 MB log or a screen recording. What it can read
+is a careful rendering of one, so every source is ingested once - copied in,
+classified by its bytes rather than its name, and turned into text - and that
+rendering is kept beside the original. **The original is never replaced by its
+rendering**, so a claim the model makes about a capture can be checked against
+the capture itself.
+
+| You add | What the model is given |
+| --- | --- |
+| `.pcap` / `.pcapng` | Network Tool's own analysis: duration, protocol shares, busiest conversations, TCP health, DNS timing, and everything the analyzer flags |
+| log, config, JSON, CSV, plain text | the file, head and tail, with the middle marked as omitted - the tail is kept first, because the end of a log is where the failure is |
+| screenshot | the image itself, to the vision model |
+| screen recording | frames sampled across its length, *and* the recording |
+
+Rendering a capture goes through the same analyzer as the Analyse tab, so Assist
+and Network Tool cannot disagree about what is in a file.
+
+Every source has a switch. Turning one off keeps the file but stops sending it,
+which is how you ask "is it still the Wi-Fi if I ignore the VPN log?" - and the
+notebook list shows `3/4 sources` so you can see at a glance that you are not
+asking about everything.
+
+```bash
+toolbox assist sources <notebook>                 # what is in play
+toolbox assist sources <notebook> --off vpn.log   # keep it, stop sending it
+toolbox assist prompt <notebook>                  # exactly what would be sent
+```
+
+`prompt` prints the whole thing. Being able to read it is what turns "nothing
+leaves" from a claim into something you can check for yourself.
 
 ### Nothing leaves the machine
 
@@ -74,7 +110,8 @@ This is enforced, not promised:
   tries to connect anywhere but the model server raises `EgressBlocked`. That
   covers code that never asked permission, including anything added later.
 * **`toolbox assist doctor`** prints where the model runs, what it resolves to, and
-  `data leaves this machine: NO` - before you have typed a ticket.
+  `data leaves this machine: NO` - before you have typed anything.
+* **`toolbox assist prompt`** prints what would be sent, in full.
 
 A model server on your LAN rather than this machine is allowed with
 `--set allow_lan=true`, and then the doctor says so plainly instead of claiming
@@ -82,13 +119,9 @@ nothing leaves.
 
 ### Screenshots and video
 
-Drop a screenshot on the Assist tab, or `attach` it. Images are scaled to 1600px
-before they reach the model; nothing else is done to them, and the original is
-left where it is.
-
-A screen recording is sampled into frames spread across its length, and *both*
-the frames and the original are kept, so the evidence is not quietly replaced by
-an interpretation of it. Video needs `ffmpeg` on PATH; screenshots do not.
+Drop files anywhere on the Assist section, or `add` them. Images are scaled to
+1600px before they reach the model; nothing else is done to them, and your own
+copy is left where it is. Video needs `ffmpeg` on PATH; screenshots do not.
 
 ### Models
 
@@ -102,8 +135,9 @@ what it picked and why:
 | 32 GB and up | `llama3.1:70b` (~40 GB) | `llama3.2-vision:90b` (~55 GB) |
 
 `--small`, `--large` and `--text-only` override the choice. With `--text-only`
-there is no vision model at all: screenshots can still be attached, and Assist
-says it cannot see them rather than guessing at their contents.
+there is no vision model at all: screenshots can still be added, and Assist says
+it cannot see them rather than guessing at their contents. Captures, logs and
+configs are text by the time they reach the model, so they work either way.
 
 Ollama is the default because it is the least work to install, but the client
 speaks the OpenAI chat-completions API, so LM Studio, llama.cpp's server and
@@ -118,7 +152,7 @@ toolbox assist config --set endpoint=http://127.0.0.1:1234/v1
 ```
 toolbox/     the front door: `toolbox net ...` and `toolbox assist ...`
 nettool/     Network Tool
-assist/      Assist
+assist/      Assist: notebooks, sources, the model client and the egress guard
 gui/         the desktop app (Rust + egui), driving both
 ios/         the iPhone/iPad app
 pi/          installing Network Tool on a Raspberry Pi as a permanent probe
@@ -638,20 +672,24 @@ and hand over the pcap.
 cd gui && cargo run --release
 ```
 
-One window over both parts. It opens on **Assist**: the ticket list, the privacy
-banner saying where the model runs, the conversation, and a drop target for
-screenshots and recordings anywhere on the tab.
+One window, two sections, chosen at the top left. It opens on **Assist**:
+notebooks down the left, the conversation in the middle, and the sources on the
+right with a switch each. Files dropped anywhere on it become sources.
 
-The rest are Network Tool: health check, host discovery, port scanning, LLDP/CDP
+**Network Tool** is the other section, and has the instrument tabs: health check, host discovery, port scanning, LLDP/CDP
 neighbour cards, live capture with pcap export, mirror/VLAN capture, the
 Wireshark-style capture analysis (conversations, protocol hierarchy, TCP health,
 Follow Stream) and the Wi-Fi analysis with per-channel congestion charts and a
 live signal monitor. See [gui/README.md](gui/README.md).
 
-Like every other tab, Assist runs the CLI and renders what comes back - the model
-is never spoken to from the app. That keeps one implementation of the privacy
-guarantee rather than two, and means the terminal and the app cannot disagree
-about where data went.
+They are separate sections rather than tabs in one row because they are separate
+tools: Assist is a workspace you sit in, Network Tool is a set of instruments you
+reach for.
+
+Like every Network Tool tab, Assist runs the CLI and renders what comes back -
+the model is never spoken to from the app. That keeps one implementation of the
+privacy guarantee rather than two, and means the terminal and the app cannot
+disagree about where data went.
 
 ```bash
 nettool-gui --open span.pcap     # open a capture straight into the analysis tab
@@ -679,8 +717,8 @@ everything is green is one where a critical finding reads like a passing one.
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -v     # CLI: 328 tests
-cd gui && cargo test                         # app: 77 tests
+python3 -m unittest discover -s tests -v     # CLI: 352 tests
+cd gui && cargo test                         # app: 78 tests
 ```
 
 The suite covers the packet decoder, pcap reader/writer round-trips, the filter language,
@@ -692,6 +730,13 @@ so the shape of what would be sent - and in particular that images arrive as
 inline data URLs rather than paths - is checked on every run rather than only
 when someone has several gigabytes of weights pulled. The egress guard is tested
 by trying to reach a real public address through it and requiring the failure.
+
+Source rendering is tested against captures built with Network Tool's own pcap
+writer, not fixtures, so what is tested is the path a real capture takes. The
+awkward cases have their own tests: a log whose tail must survive truncation, a
+single 500 KB line that must not blow the budget, a truncated capture that must
+leave the notebook usable, and a switched-off source that must not appear in
+the prompt.
 
 ## Scope and limitations
 

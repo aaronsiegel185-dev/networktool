@@ -17,10 +17,39 @@ use crate::model::Iface;
 use crate::runner::{running_as_root, Job};
 use eframe::egui;
 
+/// The two halves of Toolbox. They are separate sections rather than tabs in
+/// one row because they are separate tools: Assist is a workspace you sit in,
+/// Network Tool is a set of instruments you reach for. Putting the AI in the
+/// same row as "Port scan" made it look like one more probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Section {
+    #[default]
+    Assist,
+    Network,
+}
+
+impl Section {
+    pub const ALL: [Section; 2] = [Section::Assist, Section::Network];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Section::Assist => "Assist",
+            Section::Network => "Network Tool",
+        }
+    }
+
+    /// What this section is for, said once where someone switching can see it.
+    pub fn blurb(self) -> &'static str {
+        match self {
+            Section::Assist => "notebooks, sources and a model on this machine",
+            Section::Network => "measure the network",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
     #[default]
-    Assist,
     Overview,
     Discover,
     Scan,
@@ -32,8 +61,7 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Tab; 9] = [
-        Tab::Assist,
+    pub const ALL: [Tab; 8] = [
         Tab::Overview,
         Tab::Discover,
         Tab::Scan,
@@ -46,7 +74,6 @@ impl Tab {
 
     pub fn title(self) -> &'static str {
         match self {
-            Tab::Assist => "Assist",
             Tab::Overview => "Overview",
             Tab::Discover => "Discover",
             Tab::Scan => "Port scan",

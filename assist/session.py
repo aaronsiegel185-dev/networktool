@@ -1,4 +1,4 @@
-"""Working a ticket with a model that runs on this machine."""
+"""Working a notebook with a model that runs on this machine."""
 
 import os
 from urllib.parse import urlparse
@@ -6,14 +6,25 @@ from urllib.parse import urlparse
 from . import config, context as contextmod, llm, media
 from .privacy import no_egress
 
+# How much of the prompt the sources may take between them. A local model's
+# context is not generous, and a notebook with twenty files in it must still
+# leave room for the conversation and the machine's own measurements.
+SOURCE_BUDGET = 24000
+
 SYSTEM_PROMPT = """\
 You are the troubleshooting half of Toolbox, a network and systems tool. You run \
 entirely on this person's own machine; nothing they tell you leaves it.
 
-You are given a ticket, what the machine reports about itself, and sometimes \
-screenshots or frames from a screen recording. The measurements come from \
-Network Tool, the diagnostics half of the same software, and they are real \
-readings from this machine rather than guesses.
+You are given a notebook: a question, the sources the person added to it, and \
+what the machine reports about itself. Sources can be packet captures, logs, \
+config files, screenshots or frames from a screen recording. Captures and logs \
+have been rendered into text for you, by the same analyzer the person can run \
+themselves - so what you are reading is a real reading of their file, not a \
+guess about it.
+
+Reason from the sources in front of you. Name the source you are drawing on, \
+by filename, so the person can check it. If a source would settle the question \
+and is not here, say which one to add.
 
 How to answer:
 - Lead with the most likely cause and why the evidence points there.
@@ -27,41 +38,79 @@ measurement that would settle it.
 """
 
 
-def build_messages(ticket, system_prompt=SYSTEM_PROMPT, image_limit=6,
+def source_blocks(notebook, budget=SOURCE_BUDGET):
+    """The enabled sources as text, newest first until the budget runs out.
+
+    Newest first because the file someone just added is the one they are asking
+    about. Anything that does not fit is named but not included, so the model
+    knows the notebook holds more than it was shown rather than assuming it has
+    seen everything.
+    """
+    blocks, omitted, used = [], [], 0
+    for entry in reversed(notebook.enabled_sources()):
+        text = entry.get("digest") or ""
+        if not text:
+            continue                      # images carry no text; they go as images
+        if used + len(text) > budget:
+            omitted.append(entry["stored"])
+            continue
+        blocks.append(text)
+        used += len(text)
+    blocks.reverse()
+    omitted.reverse()
+    return blocks, omitted
+
+
+def build_messages(notebook, system_prompt=SYSTEM_PROMPT, image_limit=6,
                    with_images=True):
     """The conversation as the model will see it, newest question last."""
     messages = [{"role": "system", "content": system_prompt}]
 
-    summary = contextmod.summarise(ticket.record.get("context") or {})
-    opening = ["TICKET: %s" % ticket.title]
-    if ticket.record.get("body"):
+    opening = ["NOTEBOOK: %s" % notebook.title]
+    if notebook.record.get("body"):
         opening.append("")
-        opening.append(ticket.record["body"])
+        opening.append(notebook.record["body"])
+
+    summary = contextmod.summarise(notebook.record.get("context") or {})
     if summary:
         opening.append("")
         opening.append("WHAT THIS MACHINE REPORTS:")
         opening.append(summary)
-    attachments = ticket.attachments
-    if attachments:
-        opening.append("")
-        opening.append("ATTACHED: %s" % ", ".join(
-            "%s (%s)" % (entry["stored"], entry.get("kind", "file"))
-            for entry in attachments))
 
-    # Images ride on the first user turn, where the ticket is described. A local
-    # vision model handles a handful well and degrades quickly beyond that, so
-    # the newest few are kept rather than everything ever attached.
-    images = ticket.image_paths(limit=image_limit) if with_images else []
-    if attachments and not with_images and ticket.has_images():
+    enabled = notebook.enabled_sources()
+    if enabled:
+        opening.append("")
+        opening.append("SOURCES IN THIS NOTEBOOK: %s" % ", ".join(
+            "%s (%s)" % (entry["stored"], entry.get("kind", "file"))
+            for entry in enabled))
+
+    blocks, omitted = source_blocks(notebook)
+    for block in blocks:
+        opening.append("")
+        opening.append("=" * 60)
+        opening.append(block)
+    if omitted:
+        opening.append("")
+        opening.append("Not shown here, for space: %s. Say if you need one of "
+                       "them and it can be the only source switched on."
+                       % ", ".join(omitted))
+
+    # Images ride on the first user turn, where the notebook is described. A
+    # local vision model handles a handful well and degrades quickly beyond
+    # that, so the newest few are kept rather than everything ever added.
+    images = notebook.image_paths(limit=image_limit) if with_images else []
+    if enabled and not with_images and notebook.has_images():
         # Sending images to a text model gets them ignored at best and an error
         # at worst. Say so instead, so the answer does not pretend to have
         # looked at a screenshot it never saw.
-        opening.append("You cannot see the attached images: no vision model is "
-                       "set up. Say so rather than guessing at their contents, "
-                       "and ask for what they show in words.")
+        opening.append("")
+        opening.append("You cannot see the images in this notebook: no vision "
+                       "model is set up. Say so rather than guessing at their "
+                       "contents, and ask for what they show in words.")
+
     messages.append(llm.message("user", "\n".join(opening), images=images))
 
-    for entry in ticket.messages:
+    for entry in notebook.messages:
         role = entry.get("role")
         if role not in ("user", "assistant"):
             continue
@@ -69,30 +118,30 @@ def build_messages(ticket, system_prompt=SYSTEM_PROMPT, image_limit=6,
     return messages
 
 
-def pick_model(ticket, settings):
+def pick_model(notebook, settings):
     """Vision only when there is something to look at, and something to look with.
 
     A vision model can be deliberately absent - it is the larger download by
     far - so an empty setting means text only rather than a broken request.
     """
     vision = settings.get("vision_model") or ""
-    if ticket.has_images() and vision:
+    if notebook.has_images() and vision:
         return vision, True
     return settings.get("text_model") or config.DEFAULT_TEXT_MODEL, False
 
 
-def ask(ticket, question=None, settings=None, on_token=None, stream=True):
-    """Put the ticket to the model and record what it says.
+def ask(notebook, question=None, settings=None, on_token=None, stream=True):
+    """Put the notebook to the model and record what it says.
 
     The whole exchange happens inside the egress guard, so a stray connection
     anywhere but the model server fails loudly instead of quietly succeeding.
     """
     settings = settings or config.load()
     if question:
-        ticket.add_message("user", question)
+        notebook.add_message("user", question)
 
-    model, used_vision = pick_model(ticket, settings)
-    messages = build_messages(ticket, with_images=used_vision)
+    model, used_vision = pick_model(notebook, settings)
+    messages = build_messages(notebook, with_images=used_vision)
     endpoint = settings["endpoint"]
     host = urlparse(endpoint).hostname or "127.0.0.1"
 
@@ -102,39 +151,20 @@ def ask(ticket, question=None, settings=None, on_token=None, stream=True):
                              temperature=settings.get("temperature", 0.2),
                              stream=stream, on_token=on_token)
 
-    ticket.add_message("assistant", answer)
+    notebook.add_message("assistant", answer)
     return {"answer": answer, "model": model, "vision": used_vision,
             "endpoint": endpoint}
 
 
-def attach(ticket, path, note="", frames=6):
-    """Add a screenshot or a video to a ticket.
+def add_source(notebook, path, note="", frames=6):
+    """Bring a file into a notebook and clean up after the rendering.
 
-    A video is not stored as a video for the model's purposes - it is sampled
-    into frames, and both the frames and the original are kept so the evidence
-    is not quietly replaced by an interpretation of it.
+    The notebook does the real work; this exists to sweep the staging
+    directory, which holds shrunk screenshots and extracted frames that have
+    already been copied in under their own names.
     """
-    kind = media.sniff(path)
-    staging = os.path.join(ticket.directory, "work")
-    added = []
-
-    if kind == "image":
-        prepared = media.shrink(path, staging)
-        entry = ticket.add_attachment(prepared, kind="screenshot", note=note)
-        entry["source"] = os.path.abspath(path)
-        ticket.save()
-        added.append(entry)
-    elif kind == "video":
-        original = ticket.add_attachment(path, kind="video", note=note)
-        added.append(original)
-        for frame in media.extract_frames(path, staging, count=frames):
-            entry = ticket.add_attachment(
-                frame["path"], kind="frame",
-                note="%s at %.1fs" % (os.path.basename(path), frame["at_s"]))
-            added.append(entry)
-    else:
-        added.append(ticket.add_attachment(path, kind="file", note=note))
-
+    entry = notebook.add_source(path, note=note, frames=frames)
+    staging = os.path.join(notebook.directory, "work")
     if os.path.isdir(staging):
         for name in os.listdir(staging):
             try:
@@ -145,11 +175,11 @@ def attach(ticket, path, note="", frames=6):
             os.rmdir(staging)
         except OSError:
             pass
-    return added
+    return entry
 
 
 def doctor(settings=None):
-    """Everything someone needs to know before trusting this with a ticket."""
+    """Everything someone needs to know before trusting this with a notebook."""
     from .privacy import describe_egress
 
     settings = settings or config.load()

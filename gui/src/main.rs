@@ -12,6 +12,7 @@ use eframe::egui;
 use nettool_gui::app::Startup;
 use nettool_gui::ui::analyze::View as AnalyzeView;
 use nettool_gui::ui::wifi::View as WifiView;
+use nettool_gui::ui::Section;
 use nettool_gui::{app, runner, ui};
 use ui::Tab;
 
@@ -23,6 +24,7 @@ struct Options {
     screenshot: Option<String>,
     screenshot_delay: f32,
     autorun: bool,
+    section: Option<Section>,
     nettool: Option<String>,
     assist: Option<String>,
     sudo: bool,
@@ -37,6 +39,7 @@ fn parse_options() -> Result<Options, String> {
         screenshot: None,
         screenshot_delay: 3.0,
         autorun: false,
+        section: None,
         nettool: None,
         assist: None,
         sudo: false,
@@ -48,7 +51,8 @@ fn parse_options() -> Result<Options, String> {
                 println!(
                     "toolbox-gui - the Toolbox desktop app: Network Tool and Assist\n\n\
                      Options:\n  \
-                     --tab <name>        open on a tab: assist, overview, discover, scan, lldp, capture, mirror, analyze, wifi\n  \
+                     --section <name>    open on a section: assist, network\n  \
+                     --tab <name>        a Network Tool tab: overview, discover, scan, lldp, capture, mirror, analyze, wifi\n  \
                      --nettool <cmd>     how to run nettool (default: autodetect, e.g. \"python3 -m nettool\")\n  \
                      --assist <cmd>      how to run the Assist part (default: autodetect)\n  \
                      --sudo              run nettool through `sudo -n`\n  \
@@ -61,10 +65,17 @@ fn parse_options() -> Result<Options, String> {
                 );
                 std::process::exit(0);
             }
+            "--section" => {
+                let name = argv.next().ok_or("--section needs a name")?;
+                options.section = Some(match name.to_ascii_lowercase().as_str() {
+                    "assist" | "ai" | "notebook" | "notebooks" => Section::Assist,
+                    "net" | "network" | "nettool" => Section::Network,
+                    other => return Err(format!("unknown section: {other}")),
+                });
+            }
             "--tab" => {
                 let value = argv.next().ok_or("--tab needs a value")?;
                 options.tab = match value.to_ascii_lowercase().as_str() {
-                    "assist" | "ai" => Tab::Assist,
                     "overview" | "diag" => Tab::Overview,
                     "discover" => Tab::Discover,
                     "scan" => Tab::Scan,
@@ -162,6 +173,13 @@ fn main() -> eframe::Result<()> {
     };
 
     let startup = Startup {
+        // Naming a Network Tool tab means you want Network Tool, so --tab
+        // alone is enough; --section wins when both are given.
+        section: options.section.unwrap_or(if options.tab == Tab::default() {
+            Section::default()
+        } else {
+            Section::Network
+        }),
         tab: options.tab,
         open_file: options.open_file.clone(),
         analyze_view: options.analyze_view,

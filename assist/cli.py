@@ -4,11 +4,13 @@ import argparse
 import json
 import sys
 
-from . import __version__, config, context as contextmod, media, session, tickets
+from . import (__version__, config, context as contextmod, media, notebooks,
+               session, sources as sourcemod)
 from .llm import ModelError
 from .media import MediaError
+from .notebooks import NotebookError
 from .privacy import EgressBlocked
-from .tickets import TicketError
+from .sources import SourceError
 
 
 def _emit(payload):
@@ -21,43 +23,47 @@ def cmd_new(args):
     if args.body_file:
         with open(args.body_file, "r") as handle:
             body = handle.read()
-    ticket = tickets.create(args.title, body)
+    notebook = notebooks.create(args.title, body)
     if not args.no_context:
         sys.stderr.write("gathering what this machine knows...\n")
-        ticket.set_context(contextmod.gather(
+        notebook.set_context(contextmod.gather(
             on_progress=lambda name, what: sys.stderr.write("  %s\n" % what)))
-    for path in args.attach or []:
-        session.attach(ticket, path)
+    for path in args.add or []:
+        entry = session.add_source(notebook, path)
+        sys.stderr.write("  added %s (%s)\n" % (entry["stored"], entry["note"]))
     if args.json:
-        _emit(ticket.summary())
+        _emit(notebook.summary())
         return 0
-    sys.stdout.write("ticket %s\n" % ticket.id)
-    sys.stdout.write("  %s\n" % ticket.directory)
+    sys.stdout.write("notebook %s\n" % notebook.id)
+    sys.stdout.write("  %s\n" % notebook.directory)
     if args.ask:
-        return _answer(ticket, None, args)
-    sys.stdout.write("\nnow:  toolbox assist ask %s \"what should I check first?\"\n"
-                     % ticket.id)
+        return _answer(notebook, None, args)
+    sys.stdout.write("\nnow:  toolbox assist add %s capture.pcap\n" % notebook.id)
+    sys.stdout.write("      toolbox assist ask %s \"what should I check first?\"\n"
+                     % notebook.id)
     return 0
 
 
 def cmd_ask(args):
-    ticket = tickets.load(args.ticket)
-    return _answer(ticket, " ".join(args.question) or None, args)
+    notebook = notebooks.load(args.notebook)
+    return _answer(notebook, " ".join(args.question) or None, args)
 
 
-def _answer(ticket, question, args):
+def _answer(notebook, question, args):
     settings = config.load()
     streaming = not args.json
     if not args.json:
-        model, vision = session.pick_model(ticket, settings)
-        sys.stderr.write("asking %s%s on %s\n\n"
-                         % (model, " (vision)" if vision else "", settings["endpoint"]))
+        model, vision = session.pick_model(notebook, settings)
+        on = notebook.enabled_sources()
+        sys.stderr.write("asking %s%s on %s, from %d source%s\n\n"
+                         % (model, " (vision)" if vision else "",
+                            settings["endpoint"], len(on), "" if len(on) == 1 else "s"))
 
     def on_token(piece):
         sys.stdout.write(piece)
         sys.stdout.flush()
 
-    result = session.ask(ticket, question, settings=settings,
+    result = session.ask(notebook, question, settings=settings,
                          on_token=on_token if streaming else None, stream=streaming)
     if args.json:
         _emit(result)
@@ -66,56 +72,119 @@ def _answer(ticket, question, args):
     return 0
 
 
-def cmd_attach(args):
-    ticket = tickets.load(args.ticket)
+def cmd_add(args):
+    """Add files to a notebook as sources."""
+    notebook = notebooks.load(args.notebook)
     added = []
     for path in args.files:
-        added.extend(session.attach(ticket, path, note=args.note or "",
-                                    frames=args.frames))
+        entry = session.add_source(notebook, path, note=args.note or "",
+                                   frames=args.frames)
+        added.append(entry)
+        # A recording brings its frames with it; show those too.
+        added.extend(child for child in notebook.sources
+                     if child.get("parent") == entry["stored"]
+                     and child not in added)
     if args.json:
         _emit({"added": added})
         return 0
     for entry in added:
-        sys.stdout.write("  %-10s %s%s\n" % (entry["kind"], entry["stored"],
-                                             "  (%s)" % entry["note"]
-                                             if entry.get("note") else ""))
+        sys.stdout.write("  %-11s %-28s %s\n"
+                         % (entry["kind"], entry["stored"], entry.get("note", "")))
+    return 0
+
+
+def cmd_sources(args):
+    """List the sources in a notebook, or switch them on and off."""
+    notebook = notebooks.load(args.notebook)
+    for name in args.on or []:
+        notebook.set_source_enabled(name, True)
+    for name in args.off or []:
+        notebook.set_source_enabled(name, False)
+    for name in args.remove or []:
+        count = notebook.remove_source(name)
+        sys.stderr.write("removed %s%s\n"
+                         % (name, " and %d derived from it" % (count - 1)
+                            if count > 1 else ""))
+    if args.json:
+        _emit({"sources": notebook.detail()["sources"]})
+        return 0
+    if not notebook.sources:
+        sys.stdout.write("no sources yet - add one with: "
+                         "toolbox assist add %s <file>\n" % notebook.id)
+        return 0
+    for entry in notebook.sources:
+        sys.stdout.write("  %s %-11s %-28s %s\n"
+                         % ("on " if entry.get("enabled", True) else "off",
+                            entry["kind"], entry["stored"], entry.get("note", "")))
     return 0
 
 
 def cmd_list(args):
-    found = tickets.listing()
+    found = notebooks.listing()
     if args.json:
-        _emit({"tickets": found})
+        _emit({"notebooks": found})
         return 0
     if not found:
-        sys.stdout.write("no tickets yet - start one with: toolbox assist new \"...\"\n")
+        sys.stdout.write("no notebooks yet - start one with: "
+                         "toolbox assist new \"...\"\n")
         return 0
     for entry in found:
-        sys.stdout.write("%-34s %-8s %2d msg %2d files  %s\n"
+        sys.stdout.write("%-34s %-8s %2d msg %2d/%-2d src  %s\n"
                          % (entry["id"], entry["status"], entry["messages"],
-                            entry["attachments"], entry["title"]))
+                            entry["sources_on"], entry["sources"], entry["title"]))
     return 0
 
 
 def cmd_show(args):
-    ticket = tickets.load(args.ticket)
+    notebook = notebooks.load(args.notebook)
     if args.json:
-        _emit(ticket.detail())
+        _emit(notebook.detail())
         return 0
-    sys.stdout.write("%s\n%s\n\n" % (ticket.title, "=" * len(ticket.title)))
-    if ticket.record.get("body"):
-        sys.stdout.write("%s\n\n" % ticket.record["body"])
-    for entry in ticket.messages:
+    sys.stdout.write("%s\n%s\n\n" % (notebook.title, "=" * len(notebook.title)))
+    if notebook.record.get("body"):
+        sys.stdout.write("%s\n\n" % notebook.record["body"])
+    if notebook.sources:
+        sys.stdout.write("sources:\n")
+        for entry in notebook.sources:
+            sys.stdout.write("  %s %-11s %-28s %s\n"
+                             % ("on " if entry.get("enabled", True) else "off",
+                                entry["kind"], entry["stored"], entry.get("note", "")))
+        sys.stdout.write("\n")
+    for entry in notebook.messages:
         who = "you" if entry["role"] == "user" else "assist"
         sys.stdout.write("--- %s (%s) ---\n%s\n\n" % (who, entry["at"], entry["text"]))
     return 0
 
 
+def cmd_prompt(args):
+    """Exactly what would be sent to the model, and nothing more.
+
+    The point of a local model is that you can check this. Being able to read
+    the prompt is what turns "nothing leaves" from a claim into something
+    someone can verify for themselves.
+    """
+    notebook = notebooks.load(args.notebook)
+    settings = config.load()
+    _model, vision = session.pick_model(notebook, settings)
+    messages = session.build_messages(notebook, with_images=vision)
+    if args.json:
+        _emit(messages)
+        return 0
+    for message in messages:
+        content = message["content"]
+        if isinstance(content, list):
+            content = "\n".join(
+                part.get("text", "[image]") if part.get("type") == "text" else "[image]"
+                for part in content)
+        sys.stdout.write("--- %s ---\n%s\n\n" % (message["role"], content))
+    return 0
+
+
 def cmd_context(args):
-    ticket = tickets.load(args.ticket) if args.ticket else None
+    notebook = notebooks.load(args.notebook) if args.notebook else None
     gathered = contextmod.gather()
-    if ticket:
-        ticket.set_context(gathered)
+    if notebook:
+        notebook.set_context(gathered)
     if args.json:
         _emit(gathered)
         return 0
@@ -152,7 +221,7 @@ def cmd_doctor(args):
                         in report["missing_models"] else ""))
     sys.stdout.write("video support  %s\n"
                      % ("yes" if report["ffmpeg"] else "no - install ffmpeg"))
-    sys.stdout.write("tickets in     %s\n" % report["data_dir"])
+    sys.stdout.write("notebooks in   %s\n" % report["data_dir"])
     if report["missing_models"]:
         sys.stdout.write("\npull what is missing:\n")
         for name in report["missing_models"]:
@@ -193,8 +262,9 @@ def cmd_config(args):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="toolbox assist",
-        description="Work a ticket with a model running on this machine. "
-                    "Nothing you give it leaves the computer.")
+        description="A notebook, the files it is grounded in, and a model "
+                    "running on this machine. Nothing you give it leaves the "
+                    "computer.")
     parser.add_argument("--version", action="version", version="assist %s" % __version__)
     sub = parser.add_subparsers(dest="command")
 
@@ -202,39 +272,57 @@ def build_parser():
         target.add_argument("--json", action="store_true", help="machine-readable output")
         return target
 
-    p = add_json(sub.add_parser("new", help="start a ticket"))
+    p = add_json(sub.add_parser("new", help="start a notebook"))
     p.add_argument("title")
-    p.add_argument("-b", "--body", help="the description")
-    p.add_argument("-f", "--body-file", help="read the description from a file")
-    p.add_argument("-a", "--attach", action="append",
-                   help="a screenshot or video to attach (repeatable)")
+    p.add_argument("-b", "--body", help="the question, in your own words")
+    p.add_argument("-f", "--body-file", help="read the question from a file")
+    p.add_argument("-a", "--add", action="append", metavar="FILE",
+                   help="a source to add: pcap, log, config, screenshot, "
+                        "recording (repeatable)")
     p.add_argument("--no-context", action="store_true",
                    help="skip gathering what this machine reports")
     p.add_argument("--ask", action="store_true", help="ask the model straight away")
     p.set_defaults(func=cmd_new)
 
     p = add_json(sub.add_parser("ask", help="put a question to the model"))
-    p.add_argument("ticket")
+    p.add_argument("notebook")
     p.add_argument("question", nargs="*")
     p.set_defaults(func=cmd_ask)
 
-    p = add_json(sub.add_parser("attach", help="add screenshots or video"))
-    p.add_argument("ticket")
+    p = add_json(sub.add_parser("add", help="add sources to a notebook"))
+    p.add_argument("notebook")
     p.add_argument("files", nargs="+")
     p.add_argument("-n", "--note", help="what it shows")
     p.add_argument("--frames", type=int, default=6,
-                   help="frames to sample from a video (default 6)")
-    p.set_defaults(func=cmd_attach)
+                   help="frames to sample from a recording (default 6)")
+    p.set_defaults(func=cmd_add)
 
-    p = add_json(sub.add_parser("list", help="every ticket"))
+    p = add_json(sub.add_parser("sources", help="list sources, or switch them "
+                                                "on and off"))
+    p.add_argument("notebook")
+    p.add_argument("--on", action="append", metavar="NAME",
+                   help="include this source in what the model is told")
+    p.add_argument("--off", action="append", metavar="NAME",
+                   help="keep the file, but stop sending it")
+    p.add_argument("--remove", action="append", metavar="NAME",
+                   help="delete the source and anything derived from it")
+    p.set_defaults(func=cmd_sources)
+
+    p = add_json(sub.add_parser("list", help="every notebook"))
     p.set_defaults(func=cmd_list)
 
-    p = add_json(sub.add_parser("show", help="a ticket and its conversation"))
-    p.add_argument("ticket")
+    p = add_json(sub.add_parser("show", help="a notebook, its sources and its "
+                                             "conversation"))
+    p.add_argument("notebook")
     p.set_defaults(func=cmd_show)
 
+    p = add_json(sub.add_parser("prompt", help="exactly what would be sent to "
+                                               "the model"))
+    p.add_argument("notebook")
+    p.set_defaults(func=cmd_prompt)
+
     p = add_json(sub.add_parser("context", help="what this machine reports"))
-    p.add_argument("ticket", nargs="?", help="attach it to this ticket as well")
+    p.add_argument("notebook", nargs="?", help="store it in this notebook too")
     p.set_defaults(func=cmd_context)
 
     p = add_json(sub.add_parser("doctor", help="is the local model set up, and "
@@ -258,7 +346,7 @@ def main(argv=None):
     except EgressBlocked as exc:
         sys.stderr.write("error: %s\n" % exc)
         return 3
-    except (TicketError, ModelError, MediaError) as exc:
+    except (NotebookError, SourceError, ModelError, MediaError) as exc:
         sys.stderr.write("error: %s\n" % exc)
         return 2
     except KeyboardInterrupt:

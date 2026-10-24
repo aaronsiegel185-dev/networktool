@@ -9,12 +9,14 @@ use crate::ui::widgets;
 use crate::ui::{
     analyze::AnalyzeTab, analyze::View as AnalyzeView, assist::AssistTab, capture::CaptureTab,
     discover::DiscoverTab, lldp::LldpTab, mirror::MirrorTab,
-    overview::OverviewTab, scan::ScanTab, wifi::View as WifiView, wifi::WifiTab, Action, Tab,
+    overview::OverviewTab, scan::ScanTab, wifi::View as WifiView, wifi::WifiTab, Action,
+    Section, Tab,
 };
 
 /// What the window should show when it opens.
 #[derive(Debug, Clone, Default)]
 pub struct Startup {
+    pub section: Section,
     pub tab: Tab,
     pub wifi_view: Option<WifiView>,
     /// Run the opening tab's primary action straight away.
@@ -28,6 +30,7 @@ pub struct Startup {
 
 pub struct App {
     pub settings: Settings,
+    section: Section,
     tab: Tab,
     inventory: Option<IfaceReport>,
     inventory_job: Option<Job>,
@@ -81,6 +84,7 @@ impl App {
         }
         let mut app = Self {
             settings,
+            section: startup.section,
             tab: startup.tab,
             inventory: None,
             inventory_job: None,
@@ -126,7 +130,6 @@ impl App {
             Tab::Mirror => self.mirror.autorun(&settings),
             Tab::Analyze => self.analyze.autorun(&settings),
             Tab::Wifi => self.wifi.autorun(&settings),
-            Tab::Assist => {}
         }
     }
 
@@ -185,17 +188,24 @@ impl App {
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
-        egui::Panel::top("tabs").show(ui, |ui| {
+        egui::Panel::top("sections").show(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("Toolbox").strong().size(17.0));
-                ui.add_space(10.0);
-                for tab in Tab::ALL {
+                ui.add_space(14.0);
+                // The two halves of the product, not two of nine tabs.
+                for section in Section::ALL {
+                    let selected = self.section == section;
+                    let mut text = egui::RichText::new(section.title()).size(14.0);
+                    if selected {
+                        text = text.strong();
+                    }
                     if ui
-                        .selectable_label(self.tab == tab, tab.title())
+                        .selectable_label(selected, text)
+                        .on_hover_text(section.blurb())
                         .clicked()
                     {
-                        self.tab = tab;
+                        self.section = section;
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -217,26 +227,53 @@ impl App {
             });
             ui.add_space(4.0);
         });
+
+        // Network Tool's instruments. Assist has no tab row: it is one
+        // workspace, and the panels inside it are the navigation.
+        if self.section == Section::Network {
+            egui::Panel::top("tabs").show(ui, |ui| {
+                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    for tab in Tab::ALL {
+                        if ui.selectable_label(self.tab == tab, tab.title()).clicked() {
+                            self.tab = tab;
+                        }
+                    }
+                });
+                ui.add_space(2.0);
+            });
+        }
     }
 
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         egui::Panel::bottom("status").show(ui, |ui| {
             ui.add_space(2.0);
+            // Each section reports on itself: an interface count means nothing
+            // while you are reading a notebook.
+            let assist = self.section == Section::Assist;
+            let status = if assist {
+                self.assist.status()
+            } else {
+                self.status.clone()
+            };
+            let command = if assist {
+                self.settings.assist_base.join(" ")
+            } else {
+                self.base_command.clone()
+            };
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(&self.status)
-                        .size(11.0)
-                        .color(widgets::MUTED),
-                );
+                ui.label(egui::RichText::new(status).size(11.0).color(widgets::MUTED));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
-                        egui::RichText::new(&self.base_command)
+                        egui::RichText::new(command)
                             .monospace()
                             .size(11.0)
                             .color(widgets::MUTED),
                     );
                     if let Some(err) = &self.inventory_error {
-                        ui.colored_label(widgets::CRIT, err);
+                        if !assist {
+                            ui.colored_label(widgets::CRIT, err);
+                        }
                     }
                 });
             });
@@ -365,8 +402,11 @@ impl eframe::App for App {
         let settings = self.settings.clone();
         let inventory = &self.inventory;
         let action = egui::CentralPanel::default()
-            .show(ui, |ui| {
-                egui::ScrollArea::both()
+            .show(ui, |ui| match self.section {
+                // Assist manages its own panels and scrolling: a notebook's
+                // sources and its conversation scroll separately.
+                Section::Assist => self.assist.ui(ui, &settings),
+                Section::Network => egui::ScrollArea::both()
                     .auto_shrink([false, false])
                     .show(ui, |ui| match self.tab {
                         Tab::Overview => self.overview.ui(ui, &settings, inventory),
@@ -377,9 +417,8 @@ impl eframe::App for App {
                         Tab::Mirror => self.mirror.ui(ui, &settings, inventory),
                         Tab::Analyze => self.analyze.ui(ui, &settings, inventory),
                         Tab::Wifi => self.wifi.ui(ui, &settings, inventory),
-                        Tab::Assist => self.assist.ui(ui, &settings),
                     })
-                    .inner
+                    .inner,
             })
             .inner;
         self.apply(action);

@@ -75,15 +75,13 @@ fn summarises_signal_history() {
 
 #[test]
 fn every_tab_has_a_title() {
-    // Assist, Overview, Discover, Scan, LLDP, Capture, Mirror, Analyse, Wi-Fi
-    assert_eq!(Tab::ALL.len(), 9);
+    // Overview, Discover, Scan, LLDP, Capture, Mirror, Analyse, Wi-Fi.
+    // Assist is deliberately NOT among them: it is its own section.
+    assert_eq!(Tab::ALL.len(), 8);
     for tab in Tab::ALL {
         assert!(!tab.title().is_empty());
     }
-    // Assist opens first: a ticket is where a problem starts, and the measuring
-    // tabs are what it sends you to.
-    assert_eq!(Tab::default(), Tab::Assist);
-    assert_eq!(Tab::ALL[0], Tab::Assist);
+    assert_eq!(Tab::default(), Tab::Overview);
 }
 
 #[test]
@@ -162,4 +160,22 @@ fn is_greenish(colour: eframe::egui::Color32) -> bool {
 fn luminance(colour: eframe::egui::Color32) -> f32 {
     let [r, g, b, _] = colour.to_array();
     (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32) / 255.0
+}
+
+
+#[test]
+fn the_two_sections_are_named_and_described() {
+    use nettool_gui::ui::Section;
+
+    assert_eq!(Section::ALL.len(), 2);
+    for section in Section::ALL {
+        assert!(!section.title().is_empty());
+        assert!(!section.blurb().is_empty());
+    }
+    // Assist opens first: a question is where a problem starts, and the
+    // measuring tabs are what it sends you to.
+    assert_eq!(Section::default(), Section::Assist);
+    assert_eq!(Section::ALL[0], Section::Assist);
+    // The sections are named for what they are, not for their modules.
+    assert_eq!(Section::Network.title(), "Network Tool");
 }

@@ -161,13 +161,14 @@ run_assist doctor
 
 cat <<EOF
 
-Ready. Nothing in a ticket leaves this machine.
+Ready. Nothing in a notebook leaves this machine.
 
-  toolbox assist new "Wi-Fi drops every afternoon" --ask
-  toolbox assist attach <ticket> ~/Desktop/screenshot.png
-  toolbox assist ask <ticket> "what should I check first?"
+  toolbox assist new "Wi-Fi drops every afternoon"
+  toolbox assist add <notebook> span.pcap wifi.log ~/Desktop/shot.png
+  toolbox assist ask <notebook> "what should I check first?"
+  toolbox assist prompt <notebook>      # exactly what would be sent
 
-Or open the desktop app and start on the Assist tab.
+Or open the desktop app, which starts in the Assist section.
 EOF
 
 if [ "$STARTED_SERVER" -ne 0 ]; then

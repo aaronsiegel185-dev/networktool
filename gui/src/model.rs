@@ -1250,13 +1250,13 @@ pub struct Egress {
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct TicketList {
+pub struct NotebookList {
     #[serde(default)]
-    pub tickets: Vec<TicketSummary>,
+    pub notebooks: Vec<NotebookSummary>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct TicketSummary {
+pub struct NotebookSummary {
     #[serde(default)]
     pub id: String,
     #[serde(default)]
@@ -1268,11 +1268,14 @@ pub struct TicketSummary {
     #[serde(default)]
     pub messages: i64,
     #[serde(default)]
-    pub attachments: i64,
+    pub sources: i64,
+    /// How many of those sources are switched on.
+    #[serde(default)]
+    pub sources_on: i64,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct AssistTicket {
+pub struct Notebook {
     #[serde(default)]
     pub id: String,
     #[serde(default)]
@@ -1282,13 +1285,15 @@ pub struct AssistTicket {
     #[serde(default)]
     pub status: String,
     #[serde(default)]
-    pub messages: Vec<TicketMessage>,
+    pub directory: String,
     #[serde(default)]
-    pub attachments: Vec<TicketAttachment>,
+    pub messages: Vec<NotebookMessage>,
+    #[serde(default)]
+    pub sources: Vec<Source>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct TicketMessage {
+pub struct NotebookMessage {
     #[serde(default)]
     pub role: String,
     #[serde(default)]
@@ -1298,17 +1303,29 @@ pub struct TicketMessage {
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct TicketAttachment {
+pub struct Source {
     #[serde(default)]
     pub stored: String,
-    /// "screenshot", "video", "frame" or "file".
+    /// "capture", "log", "config", "json", "table", "text", "screenshot",
+    /// "frame", "recording" or "other".
     #[serde(default)]
     pub kind: String,
     #[serde(default)]
     pub note: String,
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// Set on frames, naming the recording they came out of.
+    #[serde(default)]
+    pub parent: Option<String>,
     #[serde(default)]
     pub bytes: i64,
-    /// Where the ticket's own copy lives, resolved by the CLI on read.
+    /// Where the notebook's own copy lives, resolved by the CLI on read.
     #[serde(default)]
     pub path: String,
+}
+
+/// A source with no `enabled` key predates the field and was being sent, so
+/// defaulting to false would silently drop it from the prompt.
+fn yes() -> bool {
+    true
 }
