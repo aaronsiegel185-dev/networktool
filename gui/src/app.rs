@@ -7,7 +7,7 @@ use crate::runner::{args, Job, Settings};
 use crate::ui::theme;
 use crate::ui::widgets;
 use crate::ui::{
-    analyze::AnalyzeTab, analyze::View as AnalyzeView, capture::CaptureTab,
+    analyze::AnalyzeTab, analyze::View as AnalyzeView, assist::AssistTab, capture::CaptureTab,
     discover::DiscoverTab, lldp::LldpTab, mirror::MirrorTab,
     overview::OverviewTab, scan::ScanTab, wifi::View as WifiView, wifi::WifiTab, Action, Tab,
 };
@@ -42,6 +42,7 @@ pub struct App {
     mirror: MirrorTab,
     analyze: AnalyzeTab,
     wifi: WifiTab,
+    assist: AssistTab,
     base_command: String,
     /// Cosmetic only. Kept on the app rather than in egui's memory so it can be
     /// written to disk and read back at the next launch.
@@ -86,6 +87,7 @@ impl App {
             inventory_error: None,
             show_settings: false,
             status: "ready".to_string(),
+            assist: AssistTab::default(),
             overview: OverviewTab::default(),
             discover: DiscoverTab::default(),
             scan: ScanTab::default(),
@@ -124,6 +126,7 @@ impl App {
             Tab::Mirror => self.mirror.autorun(&settings),
             Tab::Analyze => self.analyze.autorun(&settings),
             Tab::Wifi => self.wifi.autorun(&settings),
+            Tab::Assist => {}
         }
     }
 
@@ -162,6 +165,7 @@ impl App {
         changed |= self.mirror.tick();
         changed |= self.analyze.tick();
         changed |= self.wifi.tick();
+        changed |= self.assist.tick();
         changed
     }
 
@@ -373,6 +377,7 @@ impl eframe::App for App {
                         Tab::Mirror => self.mirror.ui(ui, &settings, inventory),
                         Tab::Analyze => self.analyze.ui(ui, &settings, inventory),
                         Tab::Wifi => self.wifi.ui(ui, &settings, inventory),
+                        Tab::Assist => self.assist.ui(ui, &settings),
                     })
                     .inner
             })

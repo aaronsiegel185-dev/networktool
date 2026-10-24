@@ -120,6 +120,20 @@ class Ticket(object):
         with open(os.path.join(self.directory, "ticket.json"), "w") as handle:
             json.dump(self.record, handle, indent=2)
 
+    def detail(self):
+        """The record, plus where each attachment actually lives.
+
+        The paths are resolved on read rather than written into ticket.json, so
+        a ticket directory stays portable between machines and home directories.
+        """
+        record = dict(self.record)
+        record["directory"] = self.directory
+        record["attachments"] = [
+            dict(entry, path=os.path.join(self.attachment_dir, entry["stored"]))
+            for entry in self.attachments
+        ]
+        return record
+
     def summary(self):
         return {
             "id": self.id,

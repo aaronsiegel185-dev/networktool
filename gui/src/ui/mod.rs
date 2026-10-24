@@ -1,6 +1,7 @@
 //! Tab views. Each tab owns its inputs, its running job and its parsed result.
 
 pub mod analyze;
+pub mod assist;
 pub mod capture;
 pub mod discover;
 pub mod mirror;
@@ -19,6 +20,7 @@ use eframe::egui;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
     #[default]
+    Assist,
     Overview,
     Discover,
     Scan,
@@ -30,7 +32,8 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Tab; 8] = [
+    pub const ALL: [Tab; 9] = [
+        Tab::Assist,
         Tab::Overview,
         Tab::Discover,
         Tab::Scan,
@@ -43,6 +46,7 @@ impl Tab {
 
     pub fn title(self) -> &'static str {
         match self {
+            Tab::Assist => "Assist",
             Tab::Overview => "Overview",
             Tab::Discover => "Discover",
             Tab::Scan => "Port scan",
@@ -199,4 +203,30 @@ pub fn root_hint(ui: &mut egui::Ui, what: &str, use_sudo: bool) {
         )
     };
     ui.label(egui::RichText::new(advice).color(widgets::WARN).size(11.0));
+}
+
+/// Poll a job and, when it finishes, decode its JSON into `slot`.
+///
+/// Shared because every tab wants the same three lines, and a tab that
+/// reimplements them is a tab that forgets to clear the error.
+pub fn poll_into<T: serde::de::DeserializeOwned>(
+    job: &mut Option<Job>,
+    slot: &mut Option<T>,
+    error: &mut Option<String>,
+) -> bool {
+    let Some(job) = job.as_mut() else {
+        return false;
+    };
+    let changed = job.poll();
+    if changed && !job.running() {
+        match job.parse_json::<T>() {
+            Some(Ok(value)) => {
+                *slot = Some(value);
+                *error = None;
+            }
+            Some(Err(err)) => *error = Some(err),
+            None => {}
+        }
+    }
+    changed
 }

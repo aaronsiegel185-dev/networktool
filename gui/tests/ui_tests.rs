@@ -75,12 +75,15 @@ fn summarises_signal_history() {
 
 #[test]
 fn every_tab_has_a_title() {
-    // Overview, Discover, Scan, LLDP, Capture, Mirror, Analyse, Wi-Fi
-    assert_eq!(Tab::ALL.len(), 8);
+    // Assist, Overview, Discover, Scan, LLDP, Capture, Mirror, Analyse, Wi-Fi
+    assert_eq!(Tab::ALL.len(), 9);
     for tab in Tab::ALL {
         assert!(!tab.title().is_empty());
     }
-    assert_eq!(Tab::default(), Tab::Overview);
+    // Assist opens first: a ticket is where a problem starts, and the measuring
+    // tabs are what it sends you to.
+    assert_eq!(Tab::default(), Tab::Assist);
+    assert_eq!(Tab::ALL[0], Tab::Assist);
 }
 
 #[test]

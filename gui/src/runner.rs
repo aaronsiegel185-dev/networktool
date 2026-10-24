@@ -5,6 +5,7 @@
 
 use serde::de::DeserializeOwned;
 use std::io::{BufRead, BufReader, Read};
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
@@ -16,6 +17,9 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub base: Vec<String>,
+    /// How to reach the Assist part. Separate from `base` because the two parts
+    /// are separate commands: `nettool ...` measures, `assist ...` reasons.
+    pub assist_base: Vec<String>,
     pub use_sudo: bool,
     pub working_dir: Option<String>,
 }
@@ -24,6 +28,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             base: vec!["nettool".to_string()],
+            assist_base: vec!["assist".to_string()],
             use_sudo: false,
             working_dir: None,
         }
@@ -34,6 +39,13 @@ impl Settings {
     /// Find a working nettool: the CLI on PATH first, then `python3 -m nettool` from
     /// the repository checkout next to this binary.
     pub fn detect() -> Self {
+        let mut settings = Self::detect_net();
+        settings.assist_base = detect_assist(&settings.base, settings.working_dir.as_deref());
+        settings
+    }
+
+    /// Locate the Network Tool CLI. `detect` then locates Assist alongside it.
+    fn detect_net() -> Self {
         let mut settings = Self::default();
         // The Windows installer puts the frozen CLI beside the GUI, where PATH
         // will not find it until the optional PATH entry is taken.
@@ -58,6 +70,17 @@ impl Settings {
             settings.base = python;
         }
         settings
+    }
+
+    /// The same environment, but invoking Assist instead of Network Tool.
+    /// Assist only ever reads its own ticket store, so it never wants sudo.
+    pub fn assist(&self) -> Settings {
+        Settings {
+            base: self.assist_base.clone(),
+            assist_base: self.assist_base.clone(),
+            use_sudo: false,
+            working_dir: self.working_dir.clone(),
+        }
     }
 
     /// Full argv for a command, including any sudo prefix.
@@ -155,6 +178,66 @@ fn hide_console(command: &mut Command) {
     #[cfg(not(windows))]
     {
         let _ = command;
+    }
+}
+
+/// Find the Assist CLI, preferring whatever sits closest to the Network Tool we
+/// already found so both parts come from the same install rather than two.
+fn detect_assist(net_base: &[String], dir: Option<&str>) -> Vec<String> {
+    // Running out of a checkout or a venv: the same interpreter, the other package.
+    if net_base.len() == 3 && net_base[1] == "-m" && net_base[2] == "nettool" {
+        let same_interpreter = vec![net_base[0].clone(), "-m".to_string(), "assist".to_string()];
+        if probe(&same_interpreter, dir) {
+            return same_interpreter;
+        }
+    }
+    // An installed CLI: the console scripts land in the same directory, so look
+    // there before PATH, which may well not have it.
+    if net_base.len() == 1 {
+        if let Some(parent) = Path::new(&net_base[0]).parent() {
+            for name in sibling_names() {
+                let sibling = parent.join(name);
+                if sibling.exists() {
+                    let candidate = assist_argv(sibling.to_string_lossy().as_ref(), name);
+                    if probe(&candidate, dir) {
+                        return candidate;
+                    }
+                }
+            }
+        }
+    }
+    for name in sibling_names() {
+        let candidate = assist_argv(name, name);
+        if probe(&candidate, dir) {
+            return candidate;
+        }
+    }
+    // Last resort: the checkout next to this binary, the same way nettool is found.
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    let fallback = vec![python.to_string(), "-m".to_string(), "assist".to_string()];
+    for candidate_dir in candidate_dirs() {
+        if probe(&fallback, Some(&candidate_dir)) {
+            return fallback;
+        }
+    }
+    fallback
+}
+
+/// Console-script names that can reach Assist, best first.
+fn sibling_names() -> [&'static str; 2] {
+    if cfg!(windows) {
+        ["assist.exe", "toolbox.exe"]
+    } else {
+        ["assist", "toolbox"]
+    }
+}
+
+/// `toolbox` needs the part naming; `assist` is already the part.
+fn assist_argv(command: &str, name: &str) -> Vec<String> {
+    if name.starts_with("toolbox") {
+        vec![command.to_string(), "assist".to_string()]
+    } else {
+        vec![command.to_string()]
     }
 }
 

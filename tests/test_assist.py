@@ -73,6 +73,29 @@ class TestTickets(AssistCase):
         stored = sorted(entry["stored"] for entry in ticket.attachments)
         self.assertEqual(stored, ["shot-1.png", "shot.png"])
 
+    def test_detail_resolves_attachment_paths_without_storing_them(self):
+        ticket = tickets.create("With evidence")
+        ticket.add_attachment(png(os.path.join(self.work, "shot.png")),
+                              kind="screenshot")
+        detail = ticket.detail()
+        path = detail["attachments"][0]["path"]
+        self.assertTrue(os.path.isfile(path), path)
+        self.assertEqual(detail["directory"], ticket.directory)
+        # The record on disk stays portable: no absolute path to this machine's
+        # ticket store is written into it.
+        with open(os.path.join(ticket.directory, "ticket.json")) as handle:
+            on_disk = json.load(handle)
+        self.assertNotIn("path", on_disk["attachments"][0])
+        self.assertNotIn("directory", on_disk)
+
+    def test_detail_does_not_mutate_the_record(self):
+        ticket = tickets.create("Untouched")
+        ticket.add_attachment(png(os.path.join(self.work, "shot.png")),
+                              kind="screenshot")
+        ticket.detail()
+        self.assertNotIn("path", ticket.attachments[0])
+        self.assertNotIn("directory", ticket.record)
+
     def test_a_missing_ticket_says_so(self):
         with self.assertRaises(tickets.TicketError):
             tickets.load("20200101-000000-nothing")

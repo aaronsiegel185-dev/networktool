@@ -1212,3 +1212,103 @@ pub struct WifiAnalyzeReport {
     pub survey: Vec<SurveyEntry>,
 }
 
+
+// --- Assist ----------------------------------------------------------------
+
+/// `assist doctor --json`: where the model runs, and whether anything leaves.
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct AssistDoctor {
+    #[serde(default)]
+    pub endpoint: String,
+    #[serde(default)]
+    pub egress: Egress,
+    #[serde(default)]
+    pub server: String,
+    #[serde(default)]
+    pub server_error: Option<String>,
+    #[serde(default)]
+    pub ffmpeg: bool,
+    #[serde(default)]
+    pub available_models: Vec<String>,
+    #[serde(default)]
+    pub missing_models: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct Egress {
+    #[serde(default)]
+    pub host: String,
+    #[serde(default)]
+    pub classification: String,
+    #[serde(default)]
+    pub allowed: bool,
+    #[serde(default)]
+    pub reason: String,
+    /// False means the model is on this machine and nothing is sent anywhere.
+    #[serde(default)]
+    pub leaves_machine: bool,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct TicketList {
+    #[serde(default)]
+    pub tickets: Vec<TicketSummary>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct TicketSummary {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub created: String,
+    #[serde(default)]
+    pub messages: i64,
+    #[serde(default)]
+    pub attachments: i64,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct AssistTicket {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub messages: Vec<TicketMessage>,
+    #[serde(default)]
+    pub attachments: Vec<TicketAttachment>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct TicketMessage {
+    #[serde(default)]
+    pub role: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub at: String,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct TicketAttachment {
+    #[serde(default)]
+    pub stored: String,
+    /// "screenshot", "video", "frame" or "file".
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub note: String,
+    #[serde(default)]
+    pub bytes: i64,
+    /// Where the ticket's own copy lives, resolved by the CLI on read.
+    #[serde(default)]
+    pub path: String,
+}

@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use super::widgets::{self, header_row, kv, BarChartItem};
 use super::{
-    hidden_names_hint, interface_picker, job_footer, root_hint, run_controls, stop_button, Action,
+    hidden_names_hint, poll_into, interface_picker, job_footer, root_hint, run_controls, stop_button, Action,
 };
 use super::netmap;
 use crate::maclocation;
@@ -1248,27 +1248,6 @@ pub fn summarize(history: &[f64]) -> HistoryStats {
 }
 
 /// Poll a one-shot job and decode its JSON into `slot` when it finishes.
-fn poll_into<T: serde::de::DeserializeOwned>(
-    job: &mut Option<Job>,
-    slot: &mut Option<T>,
-    error: &mut Option<String>,
-) -> bool {
-    let Some(job) = job.as_mut() else {
-        return false;
-    };
-    let changed = job.poll();
-    if changed && !job.running() {
-        match job.parse_json::<T>() {
-            Some(Ok(value)) => {
-                *slot = Some(value);
-                *error = None;
-            }
-            Some(Err(err)) => *error = Some(err),
-            None => {}
-        }
-    }
-    changed
-}
 
 /// Give our own association its name back, if CoreWLAN could see it.
 fn name_link(link: &mut WifiLink, mine: Option<&macwifi::Neighbour>) {

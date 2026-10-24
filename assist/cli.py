@@ -100,7 +100,7 @@ def cmd_list(args):
 def cmd_show(args):
     ticket = tickets.load(args.ticket)
     if args.json:
-        _emit(ticket.record)
+        _emit(ticket.detail())
         return 0
     sys.stdout.write("%s\n%s\n\n" % (ticket.title, "=" * len(ticket.title)))
     if ticket.record.get("body"):

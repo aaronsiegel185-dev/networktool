@@ -24,6 +24,7 @@ struct Options {
     screenshot_delay: f32,
     autorun: bool,
     nettool: Option<String>,
+    assist: Option<String>,
     sudo: bool,
 }
 
@@ -37,6 +38,7 @@ fn parse_options() -> Result<Options, String> {
         screenshot_delay: 3.0,
         autorun: false,
         nettool: None,
+        assist: None,
         sudo: false,
     };
     let mut argv = std::env::args().skip(1);
@@ -48,6 +50,7 @@ fn parse_options() -> Result<Options, String> {
                      Options:\n  \
                      --tab <name>        open on a tab: overview, discover, scan, lldp, capture, mirror, analyze, wifi\n  \
                      --nettool <cmd>     how to run nettool (default: autodetect, e.g. \"python3 -m nettool\")\n  \
+                     --assist <cmd>      how to run the Assist part (default: autodetect)\n  \
                      --sudo              run nettool through `sudo -n`\n  \
                      --wifi-view <name>  wifi sub-view: analyze, networks, link, monitor\n  \
                      --open <file.pcap>  open a capture in the analysis tab\n  \
@@ -61,6 +64,7 @@ fn parse_options() -> Result<Options, String> {
             "--tab" => {
                 let value = argv.next().ok_or("--tab needs a value")?;
                 options.tab = match value.to_ascii_lowercase().as_str() {
+                    "assist" | "ai" => Tab::Assist,
                     "overview" | "diag" => Tab::Overview,
                     "discover" => Tab::Discover,
                     "scan" => Tab::Scan,
@@ -110,6 +114,9 @@ fn parse_options() -> Result<Options, String> {
                 });
             }
             "--autorun" => options.autorun = true,
+            "--assist" => {
+                options.assist = Some(argv.next().ok_or("--assist needs a command")?);
+            }
             "--nettool" => {
                 options.nettool = Some(argv.next().ok_or("--nettool needs a command")?);
             }
@@ -130,13 +137,20 @@ fn main() -> eframe::Result<()> {
     };
 
     let mut settings = match &options.nettool {
-        Some(command) => runner::Settings {
-            base: command.split_whitespace().map(|s| s.to_string()).collect(),
-            use_sudo: false,
-            working_dir: None,
-        },
+        Some(command) => {
+            let base: Vec<String> = command.split_whitespace().map(|s| s.to_string()).collect();
+            runner::Settings {
+                assist_base: base.clone(),
+                base,
+                use_sudo: false,
+                working_dir: None,
+            }
+        }
         None => runner::Settings::detect(),
     };
+    if let Some(command) = &options.assist {
+        settings.assist_base = command.split_whitespace().map(|s| s.to_string()).collect();
+    }
     settings.use_sudo = options.sudo;
 
     let native_options = eframe::NativeOptions {
@@ -165,6 +179,9 @@ fn main() -> eframe::Result<()> {
             // The saved skin, so a hacker-mode session comes back as one rather
             // than flashing the ordinary theme for a frame first.
             nettool_gui::ui::theme::apply(&cc.egui_ctx, nettool_gui::ui::theme::load_skin());
+            // Without this, an egui::Image pointing at a file renders nothing
+            // and says nothing - there is no loader registered to open it.
+            egui_extras::install_image_loaders(&cc.egui_ctx);
             Ok(Box::new(app::App::new(settings, startup.clone())))
         }),
     )

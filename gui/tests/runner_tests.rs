@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 fn python(script: &str) -> Settings {
     Settings {
         base: vec!["python3".into(), "-c".into(), script.into()],
+        assist_base: vec!["assist".into()],
         use_sudo: false,
         working_dir: None,
     }
@@ -24,6 +25,7 @@ fn wait_for(job: &mut Job, timeout: Duration) {
 fn builds_plain_argv() {
     let settings = Settings {
         base: vec!["nettool".into()],
+        assist_base: vec!["assist".into()],
         use_sudo: false,
         working_dir: None,
     };
@@ -37,6 +39,7 @@ fn builds_plain_argv() {
 fn prefixes_sudo_without_prompting() {
     let settings = Settings {
         base: vec!["python3".into(), "-m".into(), "nettool".into()],
+        assist_base: vec!["assist".into()],
         use_sudo: true,
         working_dir: None,
     };
@@ -91,6 +94,7 @@ fn surfaces_stderr_when_the_command_fails() {
 fn reports_a_missing_binary_instead_of_panicking() {
     let settings = Settings {
         base: vec!["definitely-not-a-real-binary-xyz".into()],
+        assist_base: vec!["assist".into()],
         use_sudo: false,
         working_dir: None,
     };
@@ -147,4 +151,38 @@ fn root_detection_matches_the_environment() {
             .to_string();
         assert_eq!(detected, euid == "0");
     }
+}
+
+#[test]
+fn assist_runs_as_its_own_command_and_never_through_sudo() {
+    // The two parts are separate commands: measuring may need root, reading a
+    // ticket store never does, so the sudo prefix must not carry across.
+    let settings = Settings {
+        base: vec!["nettool".into()],
+        assist_base: vec!["toolbox".into(), "assist".into()],
+        use_sudo: true,
+        working_dir: Some("/tmp".into()),
+    };
+    let assist = settings.assist();
+    assert_eq!(
+        assist.argv(&args(&["list", "--json"])),
+        args(&["toolbox", "assist", "list", "--json"])
+    );
+    assert_eq!(assist.working_dir.as_deref(), Some("/tmp"));
+    // The network part keeps its elevation.
+    assert_eq!(
+        settings.argv(&args(&["capture"]))[0],
+        "sudo".to_string()
+    );
+}
+
+#[test]
+fn detect_finds_assist_through_the_same_interpreter_as_nettool() {
+    // Running out of a checkout, both parts must come from the same tree rather
+    // than one from the repo and one from whatever is installed on PATH.
+    let settings = Settings::detect();
+    if settings.base.len() == 3 && settings.base[1] == "-m" {
+        assert_eq!(settings.assist_base[0], settings.base[0]);
+    }
+    assert!(!settings.assist_base.is_empty());
 }
