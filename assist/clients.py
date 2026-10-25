@@ -68,12 +68,16 @@ class Client(SourceHolder):
         self.record["notes"] = (existing + "\n" + text).strip() if existing else text
         self.save()
 
-    def add_fact(self, label, value):
+    def add_fact(self, label, value, origin="hand", save=True):
         """Record a fact. The same label may hold several values.
 
         An exact repeat is ignored rather than stored twice: re-running a setup
         script should not leave the same firewall address in the prompt four
         times.
+
+        `origin` is where it came from - "hand" for something typed, or a
+        connector's name. It is what lets a re-sync replace what it brought
+        last time without touching anything a person wrote.
         """
         label = (label or "").strip()
         value = (value or "").strip()
@@ -82,10 +86,53 @@ class Client(SourceHolder):
         for entry in self.facts:
             if entry["label"] == label and entry["value"] == value:
                 return entry
-        entry = {"label": label, "value": value}
+        entry = {"label": label, "value": value, "origin": origin}
         self.facts.append(entry)
-        self.save()
+        if save:
+            self.save()
         return entry
+
+    def replace_facts_from(self, origin, facts):
+        """Swap in everything one connector knows, leaving the rest alone.
+
+        A sync must never quietly delete something a person took the trouble to
+        type, so this only removes facts it put there itself last time.
+        """
+        kept = [entry for entry in self.facts
+                if entry.get("origin", "hand") != origin]
+        before = len(kept)
+        # `kept` becomes the live list, so its length has to be taken first.
+        self.record["facts"] = kept
+        for fact in facts:
+            self.add_fact(fact["label"], fact["value"], origin=origin, save=False)
+        self.save()
+        return len(self.facts) - before
+
+    # --- connectors ------------------------------------------------------
+
+    @property
+    def links(self):
+        """Which company this client is in each documentation system."""
+        return self.record.setdefault("links", {})
+
+    def link(self, connector, company_id, company_name=""):
+        self.links[connector] = {"company_id": company_id,
+                                 "company_name": company_name}
+        self.save()
+        return self.links[connector]
+
+    def unlink(self, connector):
+        self.links.pop(connector, None)
+        self.record.setdefault("synced", {}).pop(connector, None)
+        self.save()
+
+    def record_sync(self, connector, detail):
+        self.record.setdefault("synced", {})[connector] = detail
+        self.save()
+
+    @property
+    def synced(self):
+        return self.record.setdefault("synced", {})
 
     def forget(self, label, value=None):
         """Drop a fact: every value under a label, or one exact pair."""
@@ -97,6 +144,11 @@ class Client(SourceHolder):
         ]
         self.save()
         return before - len(self.record["facts"])
+
+    def hand_facts(self):
+        """Only the facts someone typed, as opposed to ones a sync brought."""
+        return [entry for entry in self.facts
+                if entry.get("origin", "hand") == "hand"]
 
     def grouped_facts(self):
         """[(label, [values])], in the order the labels were first written."""
@@ -138,9 +190,15 @@ class Client(SourceHolder):
         record["sources"] = self.source_detail()
         record["facts"] = list(self.facts)
         record["grouped_facts"] = [
-            {"label": label, "values": values}
+            {"label": label,
+             "values": values,
+             # A label is "synced" when nothing under it was typed by hand, so
+             # the app can show it as something a connector maintains.
+             "origin": _origin_of(self.facts, label)}
             for label, values in self.grouped_facts()
         ]
+        record["links"] = dict(self.links)
+        record["synced"] = dict(self.synced)
         return record
 
     def summary(self, notebook_counts=None):
@@ -149,11 +207,21 @@ class Client(SourceHolder):
             "name": self.name,
             "facts": len(self.facts),
             "sources": len(self.sources),
+            "links": sorted(self.links),
             "notebooks": (notebook_counts or {}).get(self.id, 0),
             "created": self.record.get("created", ""),
             "updated": self.record.get("updated", ""),
             "directory": self.directory,
         }
+
+
+def _origin_of(facts, label):
+    """Where a label's values came from: "hand" if any of them were typed."""
+    origins = {entry.get("origin", "hand") for entry in facts
+               if entry["label"] == label}
+    if "hand" in origins or not origins:
+        return "hand"
+    return sorted(origins)[0]
 
 
 # --- module level ----------------------------------------------------------
@@ -173,6 +241,8 @@ def create(name, notes="", directory=None):
         "notes": notes,
         "facts": [],
         "sources": [],
+        "links": {},
+        "synced": {},
         "created": datetime.datetime.now().isoformat(),
     }
     client = Client(record, target)

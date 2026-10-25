@@ -230,6 +230,20 @@ def add_source(notebook, path, note="", frames=6):
     return entry
 
 
+def _connector_report():
+    """Where each documentation connector points, for `doctor`.
+
+    Imported late and guarded: a broken connector configuration must not stop
+    someone finding out whether their model server is reachable.
+    """
+    try:
+        from . import connectors
+
+        return connectors.describe_all()
+    except Exception:
+        return []
+
+
 def doctor(settings=None):
     """Everything someone needs to know before trusting this with a notebook."""
     from .privacy import describe_egress
@@ -241,6 +255,7 @@ def doctor(settings=None):
         "egress": describe_egress(endpoint, allow_lan=settings.get("allow_lan", False)),
         "ffmpeg": media.have_ffmpeg(),
         "data_dir": config.data_dir(),
+        "connectors": _connector_report(),
         "models": {"text": settings.get("text_model"),
                    "vision": settings.get("vision_model")},
     }

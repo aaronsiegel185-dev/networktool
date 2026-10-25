@@ -6,7 +6,8 @@ Two tools that know about each other, both running entirely on your own machine.
 to - packet captures, logs, configs, screenshots, screen recordings - and then
 ask about them, with Network Tool's own measurements alongside. Notebooks are
 filed under the client they are for, so what you know about their setup is
-written down once and reaches every question you ever ask about them.
+written down once - or pulled in from Hudu, NetBox, BookStack or a folder of
+runbooks - and reaches every question you ever ask about them.
 
 > **Nothing you give Assist leaves this computer.** Not the files, not the
 > question, not what your machine reports about itself. The model runs on
@@ -107,6 +108,54 @@ toolbox assist client show acme          # facts, notes, files, notebooks
 Deleting a client keeps its notebooks and simply unfiles them: a year of
 someone's tickets should never go with the client record.
 
+### Connecting your documentation
+
+If what is permanently true about a client already lives in Hudu, NetBox,
+BookStack or a folder of runbooks, Assist can pull it in rather than ask you to
+type it twice.
+
+```bash
+toolbox assist connector add folder --path ~/docs          # no network at all
+toolbox assist connector add netbox --url http://netbox.lan --token-file ~/.nb
+toolbox assist connector add hudu   --url https://hudu.lan --token-file ~/.hudu
+toolbox assist connector link netbox acme
+toolbox assist sync acme
+```
+
+| Connector | What comes across |
+| --- | --- |
+| **Hudu** | articles as documents; asset fields as facts. Passwords are never read |
+| **NetBox** | devices and their management addresses, prefixes per site, VLANs, sites - as facts |
+| **BookStack** | a book's pages as documents |
+| **folder** | a directory of markdown, runbooks or config exports. No network, no token |
+
+A sync is a separate step, never something that happens while you are asking a
+question. It writes what it finds into the client's own directory as ordinary
+sources, so **after a sync, asking the model touches loopback and nothing
+else**. The documentation becomes cached evidence rather than a live
+dependency, which also means a documentation outage never stops you working a
+ticket.
+
+Facts a connector brought are marked as its own. A re-sync replaces exactly
+what it put there last time and never touches what you typed, and a document
+deleted at the far end stops being quoted back at you.
+
+**What a sync sends, precisely:** the client's name and your API token, to the
+one server you configured. Your notebooks, captures, screenshots and questions
+are never sent there. The model still runs on this machine.
+
+**What it is allowed to reach:** exactly that host, enforced by the same guard
+that protects the model exchange - a redirect to another server is refused and
+nothing is sent to it. A server on your own network keeps the original promise
+whole. A hosted one does not, so it has to be asked for once with
+`--allow-public`, and `toolbox assist doctor` names it every time afterwards. A
+URL that does not resolve counts as not local: unknown is not the same as safe.
+
+```bash
+toolbox assist connector list      # what can be connected, and where each points
+toolbox assist connector check     # can it be reached, and as whom
+```
+
 ### Sources
 
 A model cannot read a pcap, a 90 MB log or a screen recording. What it can read
@@ -151,7 +200,9 @@ This is enforced, not promised:
   tries to connect anywhere but the model server raises `EgressBlocked`. That
   covers code that never asked permission, including anything added later.
 * **`toolbox assist doctor`** prints where the model runs, what it resolves to, and
-  `data leaves this machine: NO` - before you have typed anything.
+  `data leaves this machine: NO` - before you have typed anything. It also names
+  every documentation connector and whether its host is on this machine, on your
+  network, or out on the internet.
 * **`toolbox assist prompt`** prints what would be sent, in full.
 
 A model server on your LAN rather than this machine is allowed with
@@ -194,6 +245,7 @@ toolbox assist config --set endpoint=http://127.0.0.1:1234/v1
 toolbox/     the front door: `toolbox net ...` and `toolbox assist ...`
 nettool/     Network Tool
 assist/      Assist: clients, notebooks, sources, the model client, the egress guard
+  connectors/  Hudu, NetBox, BookStack and folder
 gui/         the desktop app (Rust + egui), driving both
 ios/         the iPhone/iPad app
 pi/          installing Network Tool on a Raspberry Pi as a permanent probe
@@ -763,7 +815,7 @@ everything is green is one where a critical finding reads like a passing one.
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -v     # CLI: 380 tests
+python3 -m unittest discover -s tests -v     # CLI: 421 tests
 cd gui && cargo test                         # app: 78 tests
 ```
 
@@ -776,6 +828,15 @@ so the shape of what would be sent - and in particular that images arrive as
 inline data URLs rather than paths - is checked on every run rather than only
 when someone has several gigabytes of weights pulled. The egress guard is tested
 by trying to reach a real public address through it and requiring the failure.
+
+Connectors are tested against stub servers speaking the documented request and
+response shapes of Hudu, NetBox and BookStack, which is as far as testing can
+honestly go without owning an instance of each: it proves the client is
+self-consistent and handles the documented shapes, not that a vendor has not
+changed them. The tests that matter most are the narrow ones - that a sync
+sends no part of a notebook, that a redirect off the declared host is refused,
+that passwords are never pulled out of Hudu, and that asking the model after a
+sync still works with the documentation server gone.
 
 Source rendering is tested against captures built with Network Tool's own pcap
 writer, not fixtures, so what is tested is the path a real capture takes. The

@@ -1273,6 +1273,9 @@ pub struct ClientSummary {
     pub sources: i64,
     #[serde(default)]
     pub notebooks: i64,
+    /// Which documentation systems this client is linked to.
+    #[serde(default)]
+    pub links: Vec<String>,
 }
 
 /// A client: who a notebook is for, and what is permanently true about their
@@ -1290,6 +1293,10 @@ pub struct Client {
     pub grouped_facts: Vec<FactGroup>,
     #[serde(default)]
     pub sources: Vec<Source>,
+    #[serde(default)]
+    pub links: std::collections::BTreeMap<String, Link>,
+    #[serde(default)]
+    pub synced: std::collections::BTreeMap<String, SyncRecord>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -1298,6 +1305,30 @@ pub struct FactGroup {
     pub label: String,
     #[serde(default)]
     pub values: Vec<String>,
+    /// "hand" when someone typed it, otherwise the connector that maintains it.
+    #[serde(default)]
+    pub origin: String,
+}
+
+/// What a client is linked to in each documentation system.
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct Link {
+    #[serde(default)]
+    pub company_name: String,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct SyncRecord {
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub company: String,
+    #[serde(default)]
+    pub documents: i64,
+    #[serde(default)]
+    pub facts: i64,
+    #[serde(default)]
+    pub at: String,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]

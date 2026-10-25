@@ -110,10 +110,40 @@ def describe_egress(url, allow_lan=False):
     }
 
 
+def describe_host(url, label="", expected=""):
+    """Where a declared host is, in the same words `doctor` uses for the model.
+
+    Used for documentation connectors. Unlike the model endpoint, a
+    documentation server is allowed to be somewhere else - that is what makes
+    it documentation - so this reports rather than refuses. Whether a public
+    one is permitted is the connector's decision, taken once at setup and
+    recorded, not something guessed at every sync.
+    """
+    host = urlparse(url).hostname or ""
+    kind = classify(host)
+    where = {
+        "loopback": "on this machine",
+        "private": "on your local network",
+        "public": "out on the internet",
+        "unresolved": "not resolvable from here",
+    }[kind]
+    return {
+        "label": label,
+        "url": url,
+        "host": host,
+        "resolves_to": [str(a) for a in resolve_host(host)],
+        "classification": kind,
+        "where": where,
+        "leaves_machine": kind != "loopback",
+        "expected": expected,
+    }
+
+
 class _GuardedSocket(socket.socket):
     """A socket that will not connect anywhere it has not been told it may."""
 
     _allowed = ()
+    _purpose = ("the model server you configured")
 
     def connect(self, address):
         self._check(address)
@@ -141,8 +171,8 @@ class _GuardedSocket(socket.socket):
                 return
         raise EgressBlocked(
             "blocked a connection to %s. Assist runs entirely on this machine, so "
-            "the only destinations it may reach are this computer and the model "
-            "server you configured." % host)
+            "the only destinations it may reach are this computer and %s."
+            % (host, cls._purpose))
 
 
 class no_egress(object):
@@ -153,7 +183,8 @@ class no_egress(object):
     the connection nobody knew was there, not the ones already audited.
     """
 
-    def __init__(self, allow=()):
+    def __init__(self, allow=(), purpose="the model server you configured"):
+        self.purpose = purpose
         resolved = []
         for host in allow:
             resolved.append(host)
@@ -164,7 +195,8 @@ class no_egress(object):
 
     def __enter__(self):
         self._saved = socket.socket
-        guard = type("GuardedSocket", (_GuardedSocket,), {"_allowed": self.allow})
+        guard = type("GuardedSocket", (_GuardedSocket,),
+                     {"_allowed": self.allow, "_purpose": self.purpose})
         socket.socket = guard
         return self
 

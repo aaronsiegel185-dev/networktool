@@ -800,6 +800,50 @@ impl AssistTab {
             .size(11.0)
             .color(widgets::MUTED),
         );
+
+        // Documentation they are linked to, and when it was last pulled in.
+        if !client.links.is_empty() {
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    egui::RichText::new("documentation")
+                        .size(11.0)
+                        .color(widgets::MUTED),
+                );
+                for (name, link) in &client.links {
+                    let last = client.synced.get(name);
+                    let detail = match last {
+                        Some(record) => format!(
+                            "{name}: {} · {}, {}, {}",
+                            link.company_name,
+                            plural(record.documents, "document"),
+                            plural(record.facts, "fact"),
+                            record.at.get(..10).unwrap_or(&record.at)
+                        ),
+                        None => format!("{name}: {} · not pulled yet", link.company_name),
+                    };
+                    ui.label(egui::RichText::new(detail).size(11.0))
+                        .on_hover_text(
+                            "Pulled in once and cached here. Asking the model \
+                             never touches it.",
+                        );
+                }
+                if ui
+                    .add_enabled(!self.busy(), egui::Button::new("Sync"))
+                    .on_hover_text(
+                        "Fetch their documentation now. Only the client's name \
+                         and your API token go out; nothing from a notebook does.",
+                    )
+                    .clicked()
+                {
+                    self.run(
+                        &settings.assist(),
+                        "assist sync",
+                        args(&["sync", id]),
+                    );
+                }
+            });
+        }
         ui.add_space(8.0);
 
         // --- facts ---
@@ -815,12 +859,28 @@ impl AssistTab {
             .striped(true)
             .show(ui, |ui| {
                 for group in &client.grouped_facts {
-                    ui.label(egui::RichText::new(&group.label).size(12.0).strong());
+                    let synced = !group.origin.is_empty() && group.origin != "hand";
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(&group.label).size(12.0).strong());
+                        if synced {
+                            // Deleting it here would only have it come back on
+                            // the next sync, so say where it is maintained.
+                            ui.label(
+                                egui::RichText::new(format!("from {}", group.origin))
+                                    .size(9.0)
+                                    .color(widgets::ACCENT),
+                            )
+                            .on_hover_text(
+                                "Kept up to date by a connector. Change it there, \
+                                 or it will come back on the next sync.",
+                            );
+                        }
+                    });
                     ui.vertical(|ui| {
                         for value in &group.values {
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new(value).size(12.0).monospace());
-                                if ui.small_button("x").clicked() {
+                                if !synced && ui.small_button("x").clicked() {
                                     forget = Some((group.label.clone(), value.clone()));
                                 }
                             });

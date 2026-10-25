@@ -4,9 +4,11 @@ import argparse
 import json
 import sys
 
-from . import (__version__, clients, config, context as contextmod, media,
-               notebooks, session, sources as sourcemod)
+from . import (__version__, clients, config, connectors,
+               context as contextmod, media, notebooks, session,
+               sources as sourcemod, sync as syncmod)
 from .clients import ClientError
+from .connectors import ConnectorError
 from .llm import ModelError
 from .media import MediaError
 from .notebooks import NotebookError
@@ -404,6 +406,189 @@ def cmd_file(args):
     return 0
 
 
+# --- connectors ------------------------------------------------------------
+
+def cmd_connector_list(args):
+    registry = connectors.available()
+    saved = connectors.load_config()
+    if args.json:
+        _emit({"available": [{"name": name, "label": cls.LABEL, "help": cls.HELP,
+                              "configured": name in saved}
+                             for name, cls in sorted(registry.items())],
+               "configured": connectors.describe_all()})
+        return 0
+    for name, cls in sorted(registry.items()):
+        mark = "set up" if name in saved else "-"
+        sys.stdout.write("%-10s %-8s %s\n" % (name, mark, cls.HELP))
+    described = connectors.describe_all()
+    if described:
+        sys.stdout.write("\nwhere each one points:\n")
+        for entry in described:
+            sys.stdout.write("  %-10s %-40s %s\n"
+                             % (entry["name"], entry["url"] or "-", entry["where"]))
+    return 0
+
+
+def cmd_connector_add(args):
+    registry = connectors.available()
+    if args.connector not in registry:
+        sys.stderr.write("error: no connector called %r. Available: %s\n"
+                         % (args.connector, ", ".join(sorted(registry))))
+        return 2
+    cls = registry[args.connector]
+    entry = {}
+    if cls.NEEDS_URL:
+        if not args.url:
+            sys.stderr.write("error: %s needs --url\n" % args.connector)
+            return 2
+        entry["url"] = args.url.rstrip("/")
+    else:
+        if not args.path:
+            sys.stderr.write("error: %s needs --path\n" % args.connector)
+            return 2
+        entry["path"] = args.path
+    if args.token_file:
+        entry["token_file"] = args.token_file
+    if args.token_env:
+        entry["token_env"] = args.token_env
+    if args.token:
+        entry["token"] = args.token
+    if args.scheme:
+        entry["scheme"] = args.scheme
+
+    # Where it points decides whether this is still "nothing leaves the
+    # machine". A hosted documentation service is a real choice, so it is made
+    # once, out loud, rather than assumed.
+    if cls.NEEDS_URL:
+        from .privacy import describe_host
+
+        where = describe_host(entry["url"], label=cls.LABEL)
+        # Anything not demonstrably on this machine or your own network has to
+        # be asked for. "unresolved" counts: a name that does not resolve here
+        # is not a safe name, it is an unknown one, and it may well resolve to
+        # a hosted service the moment this runs somewhere with working DNS.
+        local = where["classification"] in ("loopback", "private")
+        if not local and not args.allow_public:
+            if where["classification"] == "unresolved":
+                sys.stderr.write(
+                    "error: %s does not resolve from here, so where it points "
+                    "cannot be checked.\n"
+                    "  It may be a hosted service. If you know what it is and "
+                    "mean to use it,\n"
+                    "  re-run with --allow-public.\n" % where["host"])
+            else:
+                sys.stderr.write(
+                    "error: %s is out on the internet.\n"
+                    "  A sync would send that server the client's name and your "
+                    "API token.\n"
+                    "  Your notebooks, captures and screenshots are never sent "
+                    "there, and\n"
+                    "  the model still runs on this machine. But it is a "
+                    "connection off this\n"
+                    "  computer, so it has to be asked for: re-run with "
+                    "--allow-public.\n" % where["host"])
+            return 2
+        entry["allow_public"] = not local
+
+    saved = connectors.load_config()
+    saved[args.connector] = entry
+    path = connectors.save_config(saved)
+    sys.stderr.write("saved to %s\n" % path)
+
+    if not args.no_check:
+        try:
+            ok, detail = connectors.get(args.connector, entry).check()
+            sys.stdout.write("%s: %s\n" % ("ok" if ok else "not ok", detail))
+        except ConnectorError as exc:
+            sys.stderr.write("warning: saved, but could not reach it yet: %s\n" % exc)
+    return 0
+
+
+def cmd_connector_check(args):
+    names = [args.connector] if args.connector else connectors.configured()
+    if not names:
+        sys.stdout.write("no connectors set up yet\n")
+        return 0
+    failed = 0
+    for name in names:
+        try:
+            ok, detail = connectors.get(name).check()
+            sys.stdout.write("%-10s ok    %s\n" % (name, detail))
+        except ConnectorError as exc:
+            failed += 1
+            sys.stdout.write("%-10s error %s\n" % (name, exc))
+    return 2 if failed else 0
+
+
+def cmd_connector_remove(args):
+    saved = connectors.load_config()
+    if args.connector not in saved:
+        sys.stderr.write("error: %s is not set up\n" % args.connector)
+        return 2
+    del saved[args.connector]
+    connectors.save_config(saved)
+    sys.stderr.write("removed %s\n" % args.connector)
+    return 0
+
+
+def cmd_connector_link(args):
+    client = _client_for(args.client)
+    connector = connectors.get(args.connector)
+    wanted = args.company or client.name
+    found = connector.companies(wanted)
+    if not found:
+        sys.stderr.write("error: %s has no %s matching %r\n"
+                         % (connector.LABEL, connector.COMPANY_WORD, wanted))
+        return 2
+    exact = [row for row in found if row["name"].lower() == wanted.lower()]
+    if len(found) > 1 and not exact:
+        sys.stderr.write("%d %ss match %r. Pick one with --company:\n"
+                         % (len(found), connector.COMPANY_WORD, wanted))
+        for row in found[:20]:
+            sys.stderr.write("  %s\n" % row["name"])
+        return 2
+    chosen = (exact or found)[0]
+    client.link(args.connector, chosen["id"], chosen["name"])
+    sys.stdout.write("%s is linked to %s %s in %s\n"
+                     % (client.name, connector.COMPANY_WORD, chosen["name"],
+                        connector.LABEL))
+    if not args.no_sync:
+        return _run_sync(client, args.connector, args)
+    return 0
+
+
+def cmd_connector_unlink(args):
+    client = _client_for(args.client)
+    client.unlink(args.connector)
+    sys.stderr.write("%s is no longer linked to %s\n" % (client.name, args.connector))
+    return 0
+
+
+def cmd_sync(args):
+    client = _client_for(args.client)
+    return _run_sync(client, args.connector, args)
+
+
+def _run_sync(client, connector_name, args):
+    def say(_name, text):
+        sys.stderr.write("  %s\n" % text)
+
+    results = syncmod.sync_client(client, connector_name,
+                                  on_progress=None if args.json else say)
+    if args.json:
+        _emit({"results": results})
+        return 0 if all(r.get("ok") for r in results) else 2
+    for result in results:
+        if not result.get("ok"):
+            sys.stdout.write("%-10s failed: %s\n"
+                             % (result["connector"], result["error"]))
+            continue
+        sys.stdout.write("%-10s %d document(s), %d fact(s) from %s\n"
+                         % (result["connector"], result["documents"],
+                            result["facts"], result["company"]))
+    return 0 if all(r.get("ok") for r in results) else 2
+
+
 def cmd_doctor(args):
     report = session.doctor()
     if args.json:
@@ -434,6 +619,17 @@ def cmd_doctor(args):
     sys.stdout.write("video support  %s\n"
                      % ("yes" if report["ffmpeg"] else "no - install ffmpeg"))
     sys.stdout.write("notebooks in   %s\n" % report["data_dir"])
+    described = report.get("connectors") or []
+    if described:
+        sys.stdout.write("\ndocumentation connectors:\n")
+        for entry in described:
+            sys.stdout.write("  %-10s %-38s %s\n"
+                             % (entry["name"], entry["url"] or "-", entry["where"]))
+        if any(entry["leaves_machine"] for entry in described):
+            sys.stdout.write(
+                "  A sync sends those servers the client name and your API token.\n"
+                "  Notebooks, captures and screenshots are never sent to them, and\n"
+                "  the model still runs on this machine.\n")
     if report["missing_models"]:
         sys.stdout.write("\npull what is missing:\n")
         for name in report["missing_models"]:
@@ -603,6 +799,55 @@ def build_parser():
     p.add_argument("notebook", nargs="?", help="store it in this notebook too")
     p.set_defaults(func=cmd_context)
 
+    connector = sub.add_parser("connector", help="connect your documentation: "
+                                                "Hudu, NetBox, BookStack, or a folder")
+    nsub = connector.add_subparsers(dest="connector_command")
+    connector.set_defaults(func=lambda a: (connector.print_help(), 0)[1])
+
+    p = add_json(nsub.add_parser("list", help="what can be connected, and what is"))
+    p.set_defaults(func=cmd_connector_list)
+
+    p = add_json(nsub.add_parser("add", help="set one up"))
+    p.add_argument("connector", help="hudu, netbox, bookstack or folder")
+    p.add_argument("--url", help="the server's root, not its API path")
+    p.add_argument("--path", help="for the folder connector: the directory")
+    p.add_argument("--token-file", help="a file holding the API token (preferred)")
+    p.add_argument("--token-env", metavar="NAME",
+                   help="an environment variable holding it")
+    p.add_argument("--token", help="the token itself (stored in a 0600 file)")
+    p.add_argument("--scheme", help="auth scheme where it varies, e.g. NetBox's "
+                                    "Token or Bearer")
+    p.add_argument("--allow-public", action="store_true",
+                   help="the server is on the internet and you mean it")
+    p.add_argument("--no-check", action="store_true", help="skip the test call")
+    p.set_defaults(func=cmd_connector_add)
+
+    p = add_json(nsub.add_parser("check", help="can it be reached, and as whom"))
+    p.add_argument("connector", nargs="?")
+    p.set_defaults(func=cmd_connector_check)
+
+    p = add_json(nsub.add_parser("link", help="tie a client to their company "
+                                              "in a connector"))
+    p.add_argument("connector")
+    p.add_argument("client")
+    p.add_argument("--company", help="its name there, if it differs")
+    p.add_argument("--no-sync", action="store_true", help="link without pulling yet")
+    p.set_defaults(func=cmd_connector_link)
+
+    p = add_json(nsub.add_parser("unlink", help="stop pulling for a client"))
+    p.add_argument("connector")
+    p.add_argument("client")
+    p.set_defaults(func=cmd_connector_unlink)
+
+    p = add_json(nsub.add_parser("remove", help="forget a connector's setup"))
+    p.add_argument("connector")
+    p.set_defaults(func=cmd_connector_remove)
+
+    p = add_json(sub.add_parser("sync", help="pull a client's documentation in"))
+    p.add_argument("client")
+    p.add_argument("-c", "--connector", help="just this one")
+    p.set_defaults(func=cmd_sync)
+
     p = add_json(sub.add_parser("doctor", help="is the local model set up, and "
                                                "does anything leave this machine"))
     p.set_defaults(func=cmd_doctor)
@@ -624,8 +869,8 @@ def main(argv=None):
     except EgressBlocked as exc:
         sys.stderr.write("error: %s\n" % exc)
         return 3
-    except (StoreError, NotebookError, ClientError, SourceError,
-            ModelError, MediaError) as exc:
+    except (StoreError, NotebookError, ClientError, ConnectorError,
+            SourceError, ModelError, MediaError) as exc:
         sys.stderr.write("error: %s\n" % exc)
         return 2
     except KeyboardInterrupt:
