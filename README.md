@@ -261,8 +261,11 @@ and that is true wherever the files sit.
 
 ## Install
 
+**In a hurry? [QUICKSTART.md](QUICKSTART.md) is the three-stage version.**
+
 ```bash
-git clone <this repo> && cd networktool
+git clone https://github.com/aaronsiegel185-dev/networktool.git
+cd networktool
 python3 -m toolbox --help          # run straight from the checkout
 
 pip install .                      # or install `toolbox`, `nettool` and `assist`
